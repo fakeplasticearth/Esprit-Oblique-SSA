@@ -1,6 +1,7 @@
 library(matrixcalc)
 library(Matrix)
 library(lmreg)
+library(Rssa)
 
 eps <- 5 * 1e-7
 matrix_power <- function(A, N)
@@ -73,8 +74,6 @@ get_coef <- function(basis1, basis2, num_vecs){
   added_basis <- numeric(0)
   S <- t(res_basis) %*% vecs
   
-  
-  
   types <- numeric(0)
   added_vecs <- 0
   index <- 1
@@ -87,6 +86,7 @@ get_coef <- function(basis1, basis2, num_vecs){
     }
     index <- index + 1
   }
+  
   if (added_vecs < num_vecs){
     while(added_vecs < num_vecs){
       S <- t(res_basis) %*% vecs
@@ -119,9 +119,13 @@ get_coef <- function(basis1, basis2, num_vecs){
       not_basis_index <- 1
       
       for (i in 1:length(s_basis$indices)){
-        if (s_basis$indices[i] == not_basis_index)
+        if ((s_basis$indices[i] == not_basis_index) | (row_norm(S[,not_basis_index]) < eps))
           not_basis_index <- not_basis_index + 1
+        else
+          break
       }
+      if (not_basis_index == nrow(basis1) + 1)
+        break
       
       coef <- rep(0,ncol(S))
       coef[not_basis_index] <- 1
@@ -174,7 +178,6 @@ get_vecs <- function(B, res_basis, ranks, k, m){
   
   B_prev <- correct_matrix(matrix_power(B, k - 1))
   rk_prev <- rankMatrix(B_prev, tol=1e-7)
-  
   
   num_joined_curr <- numeric(0)
   if (length(res_basis) == 0){
@@ -265,10 +268,8 @@ get_vecs <- function(B, res_basis, ranks, k, m){
     }
   }
   else if (length(res_basis) == 0){
-    #Ситуация такая: базис еще пустой, ранг матрицы не 0
     curr_vecs <- get_kernel_basis(B_curr, nrow(B) - rk_curr)
     prev_vecs <- get_kernel_basis(B_prev, nrow(B) - rk_prev)
-    
     
     num_basis <- 0
     
@@ -277,8 +278,6 @@ get_vecs <- function(B, res_basis, ranks, k, m){
         curr_block <- numeric(0)
         
         vec <- get_lin_ind(curr_vecs, prev_vecs, 1)
-        
-        
         
         curr_block <- cbind(vec, curr_block)
         prev_vecs <- cbind(prev_vecs, vec)
@@ -306,6 +305,7 @@ get_vecs <- function(B, res_basis, ranks, k, m){
             break
           }
         }
+        
         res_basis <- cbind(res_basis, curr_block)
         cell_size <- c(cell_size, curr_cell_size)
         
@@ -313,7 +313,6 @@ get_vecs <- function(B, res_basis, ranks, k, m){
           break
         
       }
-      
       
     }
   }
@@ -366,21 +365,23 @@ get_vecs <- function(B, res_basis, ranks, k, m){
   return(ans)
 }
 
+# Возникла проблема, если оптимально вычислять здесь степени, то матрицы сильно отличаются от настоящих. Поэтому здесь неоптимально ищутся степени.
 find_k <- function(B){
   k <- 1
   C <- correct_matrix(B)
   rk <- rankMatrix(C, tol=1e-7)
   prev_rk <- rk + 1
+  B_curr <- B
   while(rk - prev_rk < 0){
     k <- k + 1
-    C <- correct_matrix(C %*% B)
+    B_curr <- correct_matrix(matrix_power(B, k))
+    
     if (k == 50){
       print("Reached matrix power limit (50).")
       break
     }
     prev_rk <- rk
-    rk <- rankMatrix(C, tol = 1e-7)
-    
+    rk <- rankMatrix(B_curr, tol = 1e-7)
   }
   return (k - 1)
 }
@@ -425,4 +426,57 @@ get_all_basis <- function(A, roots, m){
     cell_sizes[[i]] <- res$cell_size
   }
   return(list("basis" = basis, "cell_sizes" = cell_sizes))
+}
+
+clusterize_roots <- function(roots) {
+  N <- length(roots)
+  are_used <- numeric(N)
+  cluster_num <- 0
+  next_center <- 1
+  res_roots <- numeric(0)
+  res_multiplicities <- numeric(0)
+  eps <- 1e-4
+  indexes <- list()
+  k <- 0
+  
+  
+  while (!is.na(next_center)) {
+    are_used[next_center] <- 1
+    cluster_num <- cluster_num + 1
+    res_roots <- c(res_roots, roots[next_center])
+    k <- k + 1
+    indexes[[k]] <- next_center
+    res_multiplicities <- c(res_multiplicities, 1)
+    center <- next_center
+    next_center <- NA
+    for (i in 1:N) {
+      if ((! are_used[i]) & (Mod(roots[i] - roots[center]) < eps)) {
+        indexes[[k]] <- c(indexes[[k]], i)
+        are_used[i] <- 1
+        res_roots[cluster_num] <- res_roots[cluster_num] + roots[i]
+        res_multiplicities[cluster_num] <- res_multiplicities[cluster_num] + 1
+      }
+      else if (!are_used[i])
+        next_center <- i
+    }
+  }
+  for (i in 1:cluster_num)
+    res_roots[i] <- res_roots[i] / res_multiplicities[i]
+  
+  return (list("roots" = res_roots, "multiplicities" = res_multiplicities, "indexes" = indexes, "cluster_num" = cluster_num))
+}  
+
+get_roots <- function(ssa_obj, num_roots){
+  w_length <- ssa_obj$window
+  U <- ssa_obj$U[,1:num_roots]
+  
+  P_low <- U[1:(w_length - 1),]
+  P_up <- U[2:w_length,]
+  M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
+  
+  #Можно и через parestimate сделать
+  dec <- eigen(M)
+  roots <- dec$values
+  res <- clusterize_roots(roots)
+  return(res)
 }
