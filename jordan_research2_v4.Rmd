@@ -56,7 +56,6 @@ output:
         }
         else if ( norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1))) > eps ){
           indices <- c(indices, i)
-          N <- norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1)))
           res <- cbind(res, vecs[,i])
         }
       }
@@ -92,6 +91,7 @@ output:
   get_coef <- function(basis1, basis2, num_vecs){
         vecs <- basis1
         res_basis <- basis2
+        
         added_basis <- numeric(0)
         S <- t(res_basis) %*% vecs
         
@@ -133,18 +133,30 @@ output:
               next
             }
             
-            
             s_basis <- get_vec_basis(S)
-            
-            
+
+            index1 <- 1
             not_basis_index <- 1
             
-            for (i in 1:length(s_basis$indices)){
-              if ((s_basis$indices[i] == not_basis_index) | (row_norm(S[,not_basis_index]) < eps))
+            while (not_basis_index <= nrow(basis1)){
+              if (row_norm(S[,not_basis_index]) < eps){
                 not_basis_index <- not_basis_index + 1
-              else
-                break
+              }
+              else{
+                if (index1 <= length(s_basis$indices)){
+                  if (s_basis$indices[index1] == not_basis_index){
+                    index1 <- index1 + 1
+                    not_basis_index <- not_basis_index + 1
+                  }
+                  else
+                    break
+                }
+                else
+                  break
+              }
+              
             }
+            
             if (not_basis_index == nrow(basis1) + 1)
               break
             
@@ -232,11 +244,7 @@ output:
         if (length(res_basis) == 0)
           return(list("basis" = vecs[,1:num_vecs], "cell_size" = rep(1, num_vecs), "ranks" = ranks))
           
-        #Старая версия, ищутся именно ортогональные вектора
-        #res_basis <- cbind(res_basis, get_coef(vecs, res_basis, num_vecs))
-        #Новая
         res_basis <- cbind(res_basis, get_lin_ind(vecs, res_basis, num_vecs))
-        
         
         ans <- list("basis" = res_basis, "cell_size" = rep(1, num_vecs), "ranks" = ranks)
       }
@@ -605,7 +613,10 @@ output:
   A <- matrix(c(3, -4, 0, 2, 4, -5, -2, 4, 0, 0, 3, -2, 0, 0, 2, -1), 4, 4, byrow = TRUE)
   print(A)
   res <- get_all_basis(A, c(-1, 1), c(2, 2))
-  cell <- matrix(c(-1, 1, 0, 0, 0, -1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1), 4, 4, byrow = TRUE)
+  cell <- matrix(c(-1, 1, 0, 0, 
+                   0, -1, 0, 0, 
+                   0, 0, 1, 1, 
+                   0, 0, 0, 1), 4, 4, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
   
@@ -616,6 +627,7 @@ output:
 Большие матрицы
 
 ```{r}
+  #1 Неверно
   A <- matrix(c(1, 2, 0, 0, 0, 2,
                 1, -1, 0, 1, -1, -2,
                 0, 0, 1, 0, 0, 0,
@@ -625,10 +637,16 @@ output:
   print(A)
   eigen(A)$values
   res <- get_all_basis(A, c(3, 1, -1), c(1, 4, 1))
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  cell <- matrix(c(3, 0, 0, 0, 0, 0,
+                   0, 1, 1, 0, 0, 0,
+                   0, 0, 1, 0, 0, 0,
+                   0, 0, 0, 1, 0, 0,
+                   0, 0, 0, 0, 1, 0,
+                   0, 0, 0, 0, 0, -1), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
   
+  #2
   A <- matrix(c(-3, -2, 2, -1, 2, -1,
                 0, -1, 0, 0, 0, 0,
                 -2, 0, -1, 0, 0, -1,
@@ -638,10 +656,21 @@ output:
   print(A)
   eigen(A)$values
   res <- get_all_basis(A, c(-1), c(6))
-  res
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  cell <- matrix(c(-1, 1, 0, 0, 0, 0,
+                   0, -1, 1, 0, 0, 0,
+                   0, 0, -1, 0, 0, 0,
+                   0, 0, 0, -1, 1, 0,
+                   0, 0, 0, 0, -1, 0,
+                   0, 0, 0, 0, 0, -1), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
+  
+  #3 Базис построен неверно, не ЛНЗ
+  # Интересная проблема, по алгоритму получился не ЛНЗ базис.
+  # Возможное решение: проверить когда умножили на B, что ЛНЗ с остальным базисом, если нет, то передать на уровни ниже, что нужно +1 вектор.
+  B <- A - diag(1, 6)
+  rankMatrix(matrix_power(B, 3))
+  B %*% matrix(res$basis[,6], ncol = 1)
   
   A <- matrix(c(-1, -2, 2, -2, 2, -1,
                 0, 1, 0, 0, 0, 0,
@@ -653,10 +682,17 @@ output:
   eigen(A)$values
   res <- get_all_basis(A, c(1), c(6))
   res
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  get_vec_basis(res$basis)
+  cell <- matrix(c(1, 1, 0, 0, 0, 0,
+                   0, 1, 1, 0, 0, 0,
+                   0, 0, 1, 0, 0, 0,
+                   0, 0, 0, 1, 1, 0,
+                   0, 0, 0, 0, 1, 0,
+                   0, 0, 0, 0, 0, 1), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
   
+  #4
   A <- matrix(c(-1, -2, 2, -2, 2, -1,
                 0, 1, 0, 0, 0, 0,
                 -2, 0, 1, 0, 0, -1,
@@ -666,11 +702,16 @@ output:
   print(A)
   eigen(A)$values
   res <- get_all_basis(A, c(3, 1, -1), c(1, 4, 1))
-  res
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  cell <- matrix(c(3, 0, 0, 0, 0, 0,
+                   0, 1, 1, 0, 0, 0,
+                   0, 0, 1, 1, 0, 0,
+                   0, 0, 0, 1, 0, 0,
+                   0, 0, 0, 0, 1, 0,
+                   0, 0, 0, 0, 0, -1), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
   
+  #5
   A <- matrix(c(2, 0, 0, 0, 1, 0,
                 0, 2, 0, 0, 1, 0,
                 1, -1, -1, 1, 0, 3,
@@ -680,11 +721,16 @@ output:
   print(A)
   eigen(A)$values
   res <- get_all_basis(A, c(2), c(6))
-  res
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  cell <- matrix(c(2, 1, 0, 0, 0, 0,
+                   0, 2, 1, 0, 0, 0,
+                   0, 0, 2, 0, 0, 0,
+                   0, 0, 0, 2, 1, 0,
+                   0, 0, 0, 0, 2, 0,
+                   0, 0, 0, 0, 0, 2), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
   
+  #6
   A <- matrix(c(2, 0, 0, 0, 1, 0,
                 0, 2, 0, 0, 1, 0,
                 1, -1, -1, 1, 0, 3,
@@ -695,10 +741,16 @@ output:
   eigen(A)$values
   res <- get_all_basis(A, c(2.828427i, -2.828427i, 2), c(1, 1, 4))
   res
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  cell <- matrix(c(2.828427i, 0, 0, 0, 0, 0,
+                   0, -2.828427i, 0, 0, 0, 0,
+                   0, 0, 2, 1, 0, 0,
+                   0, 0, 0, 2, 1, 0,
+                   0, 0, 0, 0, 2, 0,
+                   0, 0, 0, 0, 0, 2), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
   
+  #7
   A <- matrix(c(-1, -1, 0, 0, 1, 0,
                 0, -2, -1, 0, 0, 1,
                 0, 0, -5, 1, 0, 3,
@@ -709,10 +761,16 @@ output:
   eigen(A)$values
   res <- get_all_basis(A, c(-2), c(6))
   res
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  cell <- matrix(c(-2, 1, 0, 0, 0, 0,
+                   0, -2, 1, 0, 0, 0,
+                   0, 0, -2, 0, 0, 0,
+                   0, 0, 0, -2, 1, 0,
+                   0, 0, 0, 0, -2, 0,
+                   0, 0, 0, 0, 0, -2), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
   
+  #8
   A <- matrix(c(4, -1, 0, 0, 1, 0,
                 0, 3, -1, 0, 0, 1,
                 0, 0, 0, 1, 0, 3,
@@ -723,10 +781,16 @@ output:
   eigen(A)$values
   res <- get_all_basis(A, c(3), c(6))
   res
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  cell <- matrix(c(3, 1, 0, 0, 0, 0,
+                   0, 3, 1, 0, 0, 0,
+                   0, 0, 3, 0, 0, 0,
+                   0, 0, 0, 3, 1, 0,
+                   0, 0, 0, 0, 3, 0,
+                   0, 0, 0, 0, 0, 3), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
   
+  #9
   A <- matrix(c(-1, 2, 0, 0, -4, 0,
                 0, -3, -1, 0, 0, 1,
                 0, 0, -5, 1, 0, 2,
@@ -737,10 +801,16 @@ output:
   eigen(A)$values
   res <- get_all_basis(A, c(-3), c(6))
   res
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  cell <- matrix(c(-3, 1, 0, 0, 0, 0,
+                   0, -3, 1, 0, 0, 0,
+                   0, 0, -3, 0, 0, 0,
+                   0, 0, 0, -3, 1, 0,
+                   0, 0, 0, 0, -3, 0,
+                   0, 0, 0, 0, 0, -3), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
   
+  #10
   A <- matrix(c(1, 1, 0, 1, 0, 0,
                 2, 1, 1, 0, 0, 0,
                 0, -2, 1, -2, 0, 1,
@@ -751,10 +821,16 @@ output:
   eigen(A)$values
   res <- get_all_basis(A, c(1), c(6))
   res
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  cell <- matrix(c(1, 1, 0, 0, 0, 0,
+                   0, 1, 1, 0, 0, 0,
+                   0, 0, 1, 0, 0, 0,
+                   0, 0, 0, 1, 1, 0,
+                   0, 0, 0, 0, 1, 1,
+                   0, 0, 0, 0, 0, 1), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
   
+  #11
   A <- matrix(c(2, 0, 0, 0, 0, 1,
                 1, 2, 0, 0, 0, 0,
                 1, 0, 2, 0, 0, 0,
@@ -765,10 +841,16 @@ output:
   eigen(A)$values
   res <- get_all_basis(A, c(2), c(6))
   res
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  cell <- matrix(c(2, 1, 0, 0, 0, 0,
+                   0, 2, 1, 0, 0, 0,
+                   0, 0, 2, 0, 0, 0,
+                   0, 0, 0, 2, 1, 0,
+                   0, 0, 0, 0, 2, 1,
+                   0, 0, 0, 0, 0, 2), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
   
+  #12
   A <- matrix(c(5, 0, 0, 0, 0, 1,
                 0, 2, 1, -1, 1, 0,
                 2, 0, 2, 1, -1, 1,
@@ -779,7 +861,12 @@ output:
   eigen(A)$values
   res <- get_all_basis(A, c(3), c(6))
   res
-  cell <- matrix(c(), 6, 6, byrow = TRUE)
+  cell <- matrix(c(3, 1, 0, 0, 0, 0,
+                   0, 3, 1, 0, 0, 0,
+                   0, 0, 3, 0, 0, 0,
+                   0, 0, 0, 3, 1, 0,
+                   0, 0, 0, 0, 3, 1,
+                   0, 0, 0, 0, 0, 3), 6, 6, byrow = TRUE)
   dec <- res$basis %*% cell %*% solve(res$basis)
   print(paste0("Norm of difference: ", norm(abs(dec - A))))
 
