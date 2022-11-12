@@ -35,7 +35,6 @@ get_vec_basis <- function(vecs){
       }
       else if ( norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1))) > eps ){
         indices <- c(indices, i)
-        N <- norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1)))
         res <- cbind(res, vecs[,i])
       }
     }
@@ -71,6 +70,7 @@ get_kernel_basis <- function(B, num){
 get_coef <- function(basis1, basis2, num_vecs){
   vecs <- basis1
   res_basis <- basis2
+  
   added_basis <- numeric(0)
   S <- t(res_basis) %*% vecs
   
@@ -112,18 +112,30 @@ get_coef <- function(basis1, basis2, num_vecs){
         next
       }
       
-      
       s_basis <- get_vec_basis(S)
       
-      
+      index1 <- 1
       not_basis_index <- 1
       
-      for (i in 1:length(s_basis$indices)){
-        if ((s_basis$indices[i] == not_basis_index) | (row_norm(S[,not_basis_index]) < eps))
+      while (not_basis_index <= nrow(basis1)){
+        if (row_norm(S[,not_basis_index]) < eps){
           not_basis_index <- not_basis_index + 1
-        else
-          break
+        }
+        else{
+          if (index1 <= length(s_basis$indices)){
+            if (s_basis$indices[index1] == not_basis_index){
+              index1 <- index1 + 1
+              not_basis_index <- not_basis_index + 1
+            }
+            else
+              break
+          }
+          else
+            break
+        }
+        
       }
+      
       if (not_basis_index == nrow(basis1) + 1)
         break
       
@@ -211,11 +223,7 @@ get_vecs <- function(B, res_basis, ranks, k, m){
       if (length(res_basis) == 0)
         return(list("basis" = vecs[,1:num_vecs], "cell_size" = rep(1, num_vecs), "ranks" = ranks))
       
-      #Старая версия, ищутся именно ортогональные вектора
-      #res_basis <- cbind(res_basis, get_coef(vecs, res_basis, num_vecs))
-      #Новая
       res_basis <- cbind(res_basis, get_lin_ind(vecs, res_basis, num_vecs))
-      
       
       ans <- list("basis" = res_basis, "cell_size" = rep(1, num_vecs), "ranks" = ranks)
     }
@@ -364,6 +372,7 @@ get_vecs <- function(B, res_basis, ranks, k, m){
   ans <- list("basis" = res_basis, "cell_size" = cell_size, "ranks" = ranks)
   return(ans)
 }
+
 
 # Возникла проблема, если оптимально вычислять здесь степени, то матрицы сильно отличаются от настоящих. Поэтому здесь неоптимально ищутся степени.
 find_k <- function(B){
