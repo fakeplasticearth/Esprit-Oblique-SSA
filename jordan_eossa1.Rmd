@@ -1,0 +1,402 @@
+---
+title: ''
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+В этом файле хранятся функции, которые строят жорданов базис. Тестирование функций и примеры построения жорданового базиса находятся в файле jordan_research2.
+
+```{r, message = FALSE, warning = FALSE}
+  source("jordan_util.R")
+  library(QZ)
+```
+
+## Реализация EOSSA для случая кратных корней
+
+```{r}
+  eossa_exp <- function(ssa_obj, ecomp_num){
+    w_length <- ssa_obj$window
+    U <- ssa_obj$U[,1:ecomp_num]
+    V <- ssa_obj$V[,1:ecomp_num]
+    vals <- diag(ssa_obj$sigma[1:ecomp_num])
+    
+    P_low <- U[1:(w_length - 1),]
+    P_up <- U[2:w_length,]
+    M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
+    
+    dec <- eigen(M)
+    roots <- dec$values
+    res <- clusterize_roots(roots)
+    print("Корни")
+    print(res$roots)
+    print("Кратности")
+    print(res$multiplicities)
+    
+    print("Разложение М")
+    print(eigen(M)$values)
+    
+    basis <- get_all_basis(M, res$roots, res$multiplicities)
+    
+    jordan_basis <- basis$basis
+    jordan_basis_inv <- qr.solve(jordan_basis)
+    components <- list()
+    
+    left <- U %*% jordan_basis
+    right <- jordan_basis_inv %*% vals %*% H(V)
+    
+    prev_m <- 0
+    left_side <- numeric(0)
+    right_side <- numeric(0)
+    
+    for (i in 1:length(res$roots)){
+      
+      if (res$multiplicities[i] == 1){
+        left_side <- matrix(left[,(1 + prev_m):(prev_m + 1)], ncol = 1)
+        right_side <- matrix(right[(1 + prev_m):(prev_m + 1),], nrow = 1)
+      }
+      else{
+        left_side <- left[,(1 + prev_m):(prev_m + res$multiplicities[i])]
+        right_side <- right[(1 + prev_m):(prev_m + res$multiplicities[i]),]
+      }
+      
+      components[[i]] <- Rssa::hankel(left_side %*% right_side)
+      
+      prev_m <- prev_m + res$multiplicities[i]
+    }
+    return(components)
+  }
+```
+
+
+# Пример 1
+Пусть будут три различных корня $\mu_1 = 0.75 - 0.63i, \mu_2 = 0.4 + 0.9i, \mu_3 = 0.5 - 0.87i$, при этом их кратности $m_1 = 4, m_2 = 2, m_3 = 1$. Построим ряд через ЛРФ.
+```{r lrts}
+  mu1 = 0.75 - 0.63i
+  print(paste0("mu_1: ", mu1, ", Mod: ", Mod(mu1)))
+  
+  mu2 = 0.4 + 0.9i
+  print(paste0("mu_2: ", mu2, ", Mod: ", Mod(mu2)))
+  
+  mu3 = 0.5 - 0.87i
+  print(paste0("mu_3: ", mu3, ", Mod: ", Mod(mu3)))
+  
+  comp1 <- function(j) {
+    return((2.5 + 0.5 * j + 1.5 * j ^ 2 - 3.4 * j ^ 3) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return((-1.2 + 1.1 * j) * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return ( - 2.2 * mu3 ^ j)
+  }
+  
+  time_series_function <- function(j) {
+    return (comp1(j) + comp2(j) + comp3(j))
+  }
+```
+
+```{r ts}
+  time_series_stamps = 0:100
+  time_series <- time_series_function(time_series_stamps)
+  
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  comps[[3]] <- comp3(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  res <- eossa_exp(s, 7)
+```
+
+Ошибки выделения компонент
+
+Компонента 1
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[2]] - comps[[1]]))))
+  print(paste0("MSE: ", sum(abs(res[[2]] - comps[[1]]) ^ 2) / length(time_series)))
+```
+Компонента 2
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[1]] - comps[[3]]))))
+  print(paste0("MSE: ", sum(abs(res[[1]] - comps[[3]]) ^ 2) / length(time_series)))
+```
+Компонента 3
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[3]] - comps[[2]]))))
+  print(paste0("MSE: ", sum(abs(res[[3]] - comps[[2]]) ^ 2) / length(time_series)))
+```
+
+Компоненты нашлись верно!
+
+## Пример 2
+
+Три различных корня $\mu_1 = 0.2 - 0.97i, \mu_2 = 0.63 + 0.63i, \mu_3 = 0.9 - 0.5i$, при этом их кратности $m_1 = 2, m_2 = 3, m_3 = 2$.
+```{r}
+  mu1 = 0.2 - 0.97i
+  print(paste0("mu_1: ", mu1, ", Mod: ", Mod(mu1)))
+  
+  mu2 = 0.63 + 0.63i
+  print(paste0("mu_2: ", mu2, ", Mod: ", Mod(mu2)))
+  
+  mu3 = 0.9 - 0.5i
+  print(paste0("mu_3: ", mu3, ", Mod: ", Mod(mu3)))
+  
+  comp1 <- function(j) {
+    return((-1.3 + 0.05 * j) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return((-1.2 + 1.1 * j - 0.4 * j ^ 2) * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return ((-2.2 + 0.8 * j) * mu3 ^ j)
+  }
+  time_series <- time_series_function(time_series_stamps)
+  
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  comps[[3]] <- comp3(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  res <- eossa_exp(s, 7)
+```
+
+Ошибки выделения компонент
+
+Компонента 1
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[3]] - comps[[1]]))))
+  print(paste0("MSE: ", sum(abs(res[[3]] - comps[[1]]) ^ 2) / length(time_series)))
+```
+Компонента 2
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[1]] - comps[[3]]))))
+  print(paste0("MSE: ", sum(abs(res[[1]] - comps[[3]]) ^ 2) / length(time_series)))
+```
+Компонента 3
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[2]] - comps[[2]]))))
+  print(paste0("MSE: ", sum(abs(res[[2]] - comps[[2]]) ^ 2) / length(time_series)))
+```
+Все компоненты нашлись верно.
+
+## Пример 3
+
+Построим тренд с помощью корня $\mu_1 = 0.12 - 1.03i$ кратности $m_1 = 1$, корня $\mu_2 = 0.63 + 0.63i$ кратности $m_2 = 3$ и корня $m_3 = 0.9 - 0.5i$ кратности $m_3 = 2$. Также добавим гармонику $0.5 \mathsf{cos}(\frac{2\pi n}{3})$.
+
+```{r}
+  mu1 = 0.12 - 1.03i
+  print(paste0("mu_1: ", mu1, ", Mod: ", Mod(mu1)))
+  
+  mu2 = 0.63 + 0.63i
+  print(paste0("mu_2: ", mu2, ", Mod: ", Mod(mu2)))
+  
+  mu3 = 0.9 - 0.5i
+  print(paste0("mu_3: ", mu3, ", Mod: ", Mod(mu3)))
+  
+  comp1 <- function(j) {
+    return(0.2 * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return((-1.2 + 1.1 * j - 0.4 * j ^ 2) * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return ((0.7 - 0.08 * j) * mu3 ^ j)
+  }
+  
+  comp4 <- function(j) {
+    return (0.5 * cos(2 * pi * j / 3))
+  }
+  
+  time_series <- time_series_function(time_series_stamps)
+  
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  comps[[3]] <- comp3(time_series_stamps)
+  comps[[4]] <- comp4(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  plot(s)
+  plot(s, type = "vectors", idx = 1:8)
+  
+  res <- eossa_exp(s, 8)
+```
+
+Ошибки выделения компонент
+
+Компонента 1
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[1]] - comps[[1]]))))
+  print(paste0("MSE: ", sum(abs(res[[1]] - comps[[1]]) ^ 2) / length(time_series)))
+```
+Компонента 2
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[4]] - comps[[2]]))))
+  print(paste0("MSE: ", sum(abs(res[[4]] - comps[[2]]) ^ 2) / length(time_series)))
+```
+Компонента 3
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[5]] - comps[[3]]))))
+  print(paste0("MSE: ", sum(abs(res[[5]] - comps[[3]]) ^ 2) / length(time_series)))
+```
+Компонента 4
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[2]] + res[[3]] - comps[[4]]))))
+  print(paste0("MSE: ", sum(abs(res[[2]] + res[[3]] - comps[[4]]) ^ 2) / length(time_series)))
+```
+
+Гармоника выделилась неверно. В элементарных компонентах гармоники величины, близкие к нулю. Скорее всего, существует проблема с собственными векторами (вектора для корней кратности 1), ее нужно исправить.
+
+## Проверка обычного EOSSA
+```{r}
+  mu12 = 0.88 - 0.4i
+  print(paste0("mu_1: ", mu12, ", Mod: ", Mod(mu12)))
+  
+  mu22 = 0.3 + 0.89i
+  print(paste0("mu_2: ", mu22, ", Mod: ", Mod(mu22)))
+  
+  mu32 = 1.01 + 0.05i
+  print(paste0("mu_3: ", mu32, ", Mod: ", Mod(mu32)))
+  
+  comp12 <- function(j) {
+    return( -0.5 * mu12 ^ j)
+  }
+  
+  comp22 <- function(j) {
+    return(1.5 * mu22 ^ j)
+  }
+  
+  comp32 <- function(j) {
+    return ( - 0.02 * mu32 ^ j)
+  }
+  
+  time_series_stamps = 0:100
+  comps <- list()
+  comps[[3]] <- comp12(time_series_stamps)
+  comps[[2]] <- comp22(time_series_stamps)
+  comps[[1]] <- comp32(time_series_stamps)
+
+  time_series_function2 <- function(j){
+    return (comp12(j) + comp22(j) + comp32(j))
+  }  
+
+  time_series2 <- time_series_function2(time_series_stamps)
+  
+  s2 <- ssa(time_series2, L = 48, svd.method = "svd")
+  res <- eossa_exp(s2, 3)
+  
+  for (i in 1:length(res)){
+    comp <- res[[i]]
+    print(paste0("MSE: ", sum(abs(comps[[i]] - comp) ^ 2) / length(comp)))
+  }
+  
+```
+
+Попробуем еще случай
+```{r}
+  mu1 = 0.5 - 0.93i
+  print(paste0("mu_1: ", mu1, ", Mod: ", Mod(mu1)))
+  
+  mu2 = 0.72 + 0.7i
+  print(paste0("mu_2: ", mu2, ", Mod: ", Mod(mu2)))
+  
+  mu3 = 0.74 - 0.62i
+  print(paste0("mu_3: ", mu3, ", Mod: ", Mod(mu3)))
+  
+  comp1 <- function(j) {
+    return(0.5 * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return(-1.2 * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return ( - 2.2 * mu3 ^ j)
+  }
+  
+  time_series <- time_series_function(time_series_stamps)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp1(time_series_stamps)
+  comps[[3]] <- comp1(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  res <- eossa_exp(s, 3)
+```
+
+Ошибки выделения компонент
+Компонента 1
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[1]] - comps[[3]]))))
+  print(paste0("MSE: ", sum(abs(res[[1]] - comps[[3]]) ^ 2) / length(time_series)))
+```
+Компонента 2
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[2]] - comps[[2]]))))
+  print(paste0("MSE: ", sum(abs(res[[2]] - comps[[2]]) ^ 2) / length(time_series)))
+```
+Компонента 3
+```{r}
+  print(paste0("Сумма модулей ошибки: ", sum(abs(res[[3]] - comps[[1]]))))
+  print(paste0("MSE: ", sum(abs(res[[3]] - comps[[1]]) ^ 2) / length(time_series)))
+```
+
+В этом примере что-то пошло не так. Возможно жорданов базис был построен неверно (надо проверить).
+
+## Сравнение ошибок нахождения корней двумя способами
+
+Сравнение: лучше найти корни через parestimate, или через eigen для сдвиговой матрицы?
+```{r}
+  mu1 = 0.2 - 0.97i
+  mu2 = 0.63 + 0.63i
+  mu3 = 0.9 - 0.5i
+
+  comp1 <- function(j) {
+    return((-1.3 + 0.05 * j) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return((-1.2 + 1.1 * j - 0.4 * j ^ 2) * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return ((-2.2 + 0.8 * j) * mu3 ^ j)
+  }
+
+  time_series_stamps = 0:100
+  time_series <- time_series_function(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  
+  res_par <- parestimate(s, groups = list(1:7), method = "esprit")
+  
+  U <- s$U[,1:7]
+    
+  P_low <- U[1:47,]
+  P_up <- U[2:48,]
+  M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
+  
+  dec <- eigen(M)
+  roots <- dec$values
+  
+  print(res_par$roots)
+  print(paste0("Ошибка нахождения корней, parestimate: ", sum(abs(res_par$roots[1:2] - mu3)) + 
+                 sum(abs(res_par$roots[3:4] - mu1)) + sum(abs(res_par$roots[5:7] - mu2)) ))
+  
+  print(roots)
+  print(paste0("Ошибка нахождения корней, eigen: ", sum(abs(roots[1:2] - mu3)) + 
+                 sum(abs(roots[3:4] - mu1)) + sum(abs(roots[5:7] - mu2)) ))
+  
+```
+Ошибки нахождения корней примерно одинаковы.
