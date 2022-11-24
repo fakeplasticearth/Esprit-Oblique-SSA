@@ -4,6 +4,7 @@ library(lmreg)
 library(Rssa)
 
 eps <- 5 * 1e-7
+eps1 <- 1 * 1e-7
 matrix_power <- function(A, N)
 {
   if (N == 0) return (diag(nrow(A)))
@@ -12,6 +13,7 @@ matrix_power <- function(A, N)
 }
 
 get_vec_basis <- function(vecs){
+  eps2 <- eps1 * nrow(vecs)
   
   if (ncol(vecs) == 1){
     if (sum(abs(vecs)) < eps)
@@ -20,12 +22,16 @@ get_vec_basis <- function(vecs){
   }
   res <- numeric(0)
   indices <- numeric(0)
+  has_vector <- FALSE
   for (i in 1:ncol(vecs))
     if (sum(abs(vecs[,i])) > eps){
       res <- as.matrix(vecs[,i], ncol = 1)
       indices <- c(indices, i)
+      has_vector <- TRUE
       break
     }
+  if (!has_vector)
+    return(list("basis" = numeric(0), "indices" = numeric(0)))
   for (i in 1:ncol(vecs)){
     coefs <- qr.solve(res, as.matrix(vecs[,i], ncol = 1))
     if (sum(abs(vecs[,i])) > eps){
@@ -33,26 +39,28 @@ get_vec_basis <- function(vecs){
         indices <- c(indices, i)
         res <- cbind(res, vecs[,i])
       }
-      else if ( norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1))) > eps ){
-        indices <- c(indices, i)
-        res <- cbind(res, vecs[,i])
-      }
+      else if ( norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1))) > eps2 ){
+          indices <- c(indices, i)
+          res <- cbind(res, vecs[,i])
+        }
     }
   }
   
   return(list("basis" = res, "indices" = indices))
 }
 
-my_compbasis <- function(vecs){
-  res <- get_coef(diag(1, nrow = nrow(vecs)), vecs, nrow(vecs) - ncol(vecs))
+my_compbasis <- function(vecs, ndim){
+  res <- numeric(0)
+  if (length(vecs) == 0)
+    res <- diag(1, nrow = ndim)
+  else
+    res <- get_coef(diag(1, nrow = nrow(vecs)), vecs, nrow(vecs) - ncol(vecs))
   return(res)
 }
 
 get_orthogonal_vec <- function(vecs){
-  return(my_compbasis(get_vec_basis(vecs)$basis))
+  return(my_compbasis(get_vec_basis(vecs)$basis, nrow(vecs)))
 }
-
-
 
 get_kernel_basis <- function(B, num){
   if (num == 0)
@@ -60,7 +68,7 @@ get_kernel_basis <- function(B, num){
   if (num == 1)
     return(as.matrix(get_orthogonal_vec(t(B))[,1], ncol = 1))
   else
-    return(get_orthogonal_vec(t(B))[,1:num])
+    return(get_orthogonal_vec(t(B))[,1:num]) 
 }
 
 #Функция ищет нужное количество векторов ортогональных базису basis2 из пространства, которое соответствует basis1 
@@ -118,9 +126,8 @@ get_coef <- function(basis1, basis2, num_vecs){
       not_basis_index <- 1
       
       while (not_basis_index <= nrow(basis1)){
-        if (row_norm(S[,not_basis_index]) < eps){
+        if (row_norm(S[,not_basis_index]) < eps)
           not_basis_index <- not_basis_index + 1
-        }
         else{
           if (index1 <= length(s_basis$indices)){
             if (s_basis$indices[index1] == not_basis_index){
@@ -183,7 +190,7 @@ get_lin_ind <- function(basis1, basis2, num_vecs){
 }
 
 
-get_vecs <- function(B, res_basis, ranks, k, m){
+get_vecs <- function(B, res_basis, cell_sizes, ranks, k, m){
   
   B_curr <- correct_matrix(matrix_power(B, k))
   rk_curr <- rankMatrix(B_curr, tol=1e-7)
@@ -217,7 +224,6 @@ get_vecs <- function(B, res_basis, ranks, k, m){
     if (num_vecs <= 0)
       ans <- list("basis" = res_basis, "cell_size" = numeric(0), "ranks" = ranks)
     else{
-      
       vecs <- get_kernel_basis(B, nrow(B) - rk_curr)
       
       if (length(res_basis) == 0)
@@ -327,8 +333,28 @@ get_vecs <- function(B, res_basis, ranks, k, m){
   else
   {
     #Здесь базис не пустой
+    #Сейчас надо передать вектора с текущего уровня из базиса
     curr_vecs <- get_kernel_basis(B_curr, nrow(B) - rk_curr)#базис ядра текущей степени оператора
     prev_vecs <- get_kernel_basis(B_prev, nrow(B) - rk_prev)#базис ядра предыдущей степени оператора
+    
+    #Новый фрагмент
+    #Достаем векторы текущего уровня
+    indices <- numeric(0)
+    shift <- 0
+    for (i in 1:length(cell_sizes)){
+      if (cell_sizes[i] > k - 1){
+        indices <- c(indices, shift + k)
+        shift <- shift + cell_sizes[i]
+      }
+      else 
+        break
+    }
+    level_vectors <- res_basis[,indices]
+    if (length(indices) == 1)
+      level_vectors <- matrix(level_vectors, ncol = 1)
+    prev_vecs <- cbind(prev_vecs, level_vectors)
+    
+    #Конец нового фрагмента
     
     if (num_joined_curr > 0)
       for (i in 1:num_joined_curr){
@@ -405,7 +431,7 @@ get_basis <- function(B, m){
   cell_size <- numeric(0)
   ranks <- numeric(0)
   while(k > 0){
-    tmp <- get_vecs(B, res_basis, ranks, k, m)
+    tmp <- get_vecs(B, res_basis, cell_size, ranks, k, m)
     res_basis <- tmp$basis
     cell_size <- c(cell_size, tmp$cell_size)
     ranks <- tmp$ranks
@@ -475,15 +501,22 @@ clusterize_roots <- function(roots) {
   return (list("roots" = res_roots, "multiplicities" = res_multiplicities, "indexes" = indexes, "cluster_num" = cluster_num))
 }  
 
-get_roots <- function(ssa_obj, num_roots){
+get_roots_par <- function(ssa_obj, num_roots){
+  roots <- parestimate(ssa_obj, groups = list(1:num_roots), method = "esprit")$roots
+  res <- clusterize_roots(roots)
+  return(res)
+}
+
+get_roots_eig <- function(ssa_obj, num_roots){
   w_length <- ssa_obj$window
   U <- ssa_obj$U[,1:num_roots]
+  V <- ssa_obj$V[,1:num_roots]
+  vals <- diag(ssa_obj$sigma[1:num_roots])
   
   P_low <- U[1:(w_length - 1),]
   P_up <- U[2:w_length,]
   M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
   
-  #Можно и через parestimate сделать
   dec <- eigen(M)
   roots <- dec$values
   res <- clusterize_roots(roots)
