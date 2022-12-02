@@ -17,7 +17,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Реализация EOSSA для случая кратных корней
 
 ```{r}
-  eossa_exp <- function(ssa_obj, ecomp_num){
+  eossa_exp <- function(ssa_obj, ecomp_num, cl_eps = 3e-4){
     w_length <- ssa_obj$window
     U <- ssa_obj$U[,1:ecomp_num]
     V <- ssa_obj$V[,1:ecomp_num]
@@ -30,7 +30,7 @@ knitr::opts_chunk$set(echo = TRUE)
     dec <- eigen(M)
     #roots <- parestimate(ssa_obj, groups = list(1:ecomp_num), method = "esprit")$roots#
     roots <- dec$values
-    res <- clusterize_roots(roots)
+    res <- clusterize_roots(roots, cl_eps)
     print("Корни")
     print(res$roots)
     print("Кратности")
@@ -190,7 +190,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Пример 3
 
-Построим тренд с помощью корня $\mu_1 = 0.12 - 1.03i$ кратности $m_1 = 1$, корня $\mu_2 = 0.63 + 0.63i$ кратности $m_2 = 3$ и корня $m_3 = 0.9 - 0.5i$ кратности $m_3 = 2$. Также добавим гармонику $0.5 \mathsf{cos}(\frac{2\pi n}{3})$.
+Построим тренд с помощью корня $\mu_1 = 0.12 - 1.03i$ кратности $m_1 = 1$, корня $\mu_2 = 0.63 + 0.63i$ кратности $m_2 = 3$ и корня $\mu_3 = 0.9 - 0.5i$ кратности $m_3 = 2$. Также добавим гармонику $0.5 \mathsf{cos}(\frac{2\pi n}{3})$.
 
 ```{r}
   mu1 = 0.12 - 1.03i
@@ -227,8 +227,6 @@ knitr::opts_chunk$set(echo = TRUE)
   comps[[4]] <- comp4(time_series_stamps)
   
   s <- ssa(time_series, L = 48, svd.method = "svd")
-  #Parestimate почему-то здесь находит корни неточно
-  get_roots_par(s, 3)
   plot(s)
   plot(s, type = "vectors", idx = 1:8)
   
@@ -260,7 +258,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Компоненты выделились верно.
 
-## Пример 4. Проверка обычного EOSSA
+## Пример 4. Проверка случая с простыми корнями
 ```{r}
   mu12 = 0.88 - 0.4i
   print(paste0("mu_1: ", mu12, ", Mod: ", Mod(mu12)))
@@ -305,7 +303,7 @@ knitr::opts_chunk$set(echo = TRUE)
   
 ```
 
-## Пример 5. Проверка обычного EOSSA
+## Пример 5. Проверка случая с простыми корнями
 ```{r}
   mu1 = 0.5 - 0.93i
   print(paste0("mu_1: ", mu1, ", Mod: ", Mod(mu1)))
@@ -490,24 +488,309 @@ knitr::opts_chunk$set(echo = TRUE)
   
   s <- ssa(time_series, L = 48, svd.method = "svd")
   plot(s)
+  source("jordan_util.R")
   print(get_roots_eig(s, 12)$roots)
   print(get_roots_eig(s, 12)$multiplicities)
-  print(paste0("Расстояние между корнями: ", Mod(0.7392588-0.6497611i - (0.7407396-0.6502349i))))
+  print(paste0("Расстояние между корнями: ", Mod(0.7392849-0.6497922i - (0.7407148-0.6502031i))))
   alg_root <- mean(c(0.7392588-0.6497611i, 0.7398371-0.6492407i, 0.7394233-0.6505245i, 0.7405740-0.6494789i, 0.7401672-0.6507600i, 0.7407396-0.6502349i))
   print(paste0("Корень при увеличении eps: ", alg_root))
   #res <- eossa_exp(s, 12)
 ```
 
-Этот пример показал, что нужно увеличить eps для отбора корней в кластер, когда кратность корня большая. Однако мы не можем заранее сказать максимальную кратность корня, поэтому необходимо как-то разумно подобрать eps, а также сделать это параметром алгоритма.
+Этот пример показал, что нужно увеличить eps для отбора корней в кластер, когда кратность корня большая. Однако мы не можем заранее сказать максимальную кратность корня, поэтому необходимо как-то разумно подобрать eps.
 
-Расстояния между корнями разные. Влияет действительно только кратность, чем больше, тем больше расстояния. При этом если правильно составить кластер, корень найдется точно.
+Расстояния между корнями разные. Влияет действительно только кратность, чем больше, тем больше расстояния. (Я пробовал посмотреть на расстояния между корнями без гармоник, та же ситуация). При этом если правильно составить кластер, корень найдется точно.
 
-Крайне интересные корни получились у гармоник, образуют квадрат (как вообще разделять??)
+## Эксперимент с изменением расстояния между сигнальными корнями
 
-## Планы
+Для того, чтобы улучшить результаты кластеризации, можно сделать вот что: посмотрим, при каком максимальном расстоянии между сигнальными корнями спектральное разложение будет выдавать неверные корни.
 
-1. Научиться точнее вычислять кратные корни (получается, вообще точнее любые корни вычислять???)
-2. Доделать разделение для корней с большой кратностью.
-3. А что будет если сделать ошибку в вычислении кратного корня, насколько поменяется ошибка?
-4. Здесь гармоники объединены вручную после разделения, необходимо будет потом автоматизировать это.
-4.1. Разобрать случай с гармониками с наложением и с гармониками "квадратом".
+Модуль разности 0.01
+
+```{r}
+  mu1 = 0.74 - 0.65i
+  print(paste0("mu_1: ", mu1, ", Mod: ", Mod(mu1)))
+  
+  mu2 = 0.74 - 0.66i
+  print(paste0("mu_2: ", mu2, ", Mod: ", Mod(mu2)))
+  
+  print(paste0("Расстояние между корнями: ", Mod(mu1 - mu2)))
+  
+  comp1 <- function(j) {
+    return((-1.3 + 0.2 * j - 0.001 * j ^ 2 + 9e-4 * j ^ 3 - 2e-5 * j ^ 4 + 1.2e-7 * j ^ 5) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return((-1.2 + 0.11 * j) * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return (-0.3 * cos(2 * pi * j / 6))
+  }
+  
+  comp4 <- function(j) {
+    return (-0.3 * cos(2 * pi * j / 3 + pi / 4))
+  }
+  
+  time_series <- time_series_function(time_series_stamps) + comp4(time_series_stamps)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  comps[[3]] <- comp3(time_series_stamps)
+  comps[[4]] <- comp4(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  roots <- get_roots_eig(s, 12)$roots
+  print(roots)
+  print(get_roots_eig(s, 12)$multiplicities)
+  print(paste0("Максимальное расстояние между корнями в кластере первого корня: ", Mod(roots[2] - roots[7])))
+  alg_root <- mean(roots[2:7])
+  print(paste0("Ошибка нахождения первого корня при усреднении правильно найденного кластера: ", Mod(alg_root - mu1)))
+```
+
+Здесь второй корень невозможно корректно найти, так как спектральное разложение неверно его находит. Следовательно, если расстояние между сигнальными корнями меньше 0.01, то точно выделить компоненты не получится.
+
+Далее сделаем так: в качестве второго корня возьмем первый, повернутый в полярной системе координат на такой угол (таким образом, модули корней равны), что расстояние между ними 0.02.
+
+Модуль разности 0.02
+```{r}
+  mu1 = 0.74 - 0.65i
+  print(paste0("mu_1: ", mu1, ", Mod: ", Mod(mu1)))
+  
+  mu2 = mu1 * exp(1i * pi / 154)
+  print(paste0("mu_2: ", mu2, ", Mod: ", Mod(mu2)))
+  
+  print(paste0("Расстояние между корнями: ", Mod(mu1 - mu2)))
+  
+  comp1 <- function(j) {
+    return((-1.3 + 0.2 * j - 0.001 * j ^ 2 + 9e-4 * j ^ 3 - 2e-5 * j ^ 4 + 1.2e-7 * j ^ 5) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return((-1.2 + 0.11 * j) * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return (-0.3 * cos(2 * pi * j / 6))
+  }
+  
+  comp4 <- function(j) {
+    return (-0.3 * cos(2 * pi * j / 3 + pi / 4))
+  }
+  
+  time_series <- time_series_function(time_series_stamps) + comp4(time_series_stamps)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  comps[[3]] <- comp3(time_series_stamps)
+  comps[[4]] <- comp4(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  roots <- get_roots_eig(s, 12)$roots
+  print(roots)
+  print(get_roots_eig(s, 12)$multiplicities)
+  print(paste0("Максимальное расстояние между корнями в кластере первого корня: ", Mod(roots[2] - roots[7])))
+  alg_root <- mean(roots[2:8][-c(4)])
+  
+  print(paste0("Ошибка нахождения первого корня при усреднении правильно найденного кластера: ", Mod(alg_root - mu1)))
+```
+Здесь второй корень снова находится спектральным разложением неверно.
+
+Модуль разности 0.03
+```{r}
+  mu1 = 0.74 - 0.65i
+  print(paste0("mu_1: ", mu1, ", Mod: ", Mod(mu1)))
+  
+  mu2 = mu1 * exp(1i * pi / 103)
+  print(paste0("mu_2: ", mu2, ", Mod: ", Mod(mu2)))
+  
+  print(paste0("Расстояние между корнями: ", Mod(mu1 - mu2)))
+  
+  comp1 <- function(j) {
+    return((-1.3 + 0.2 * j - 0.001 * j ^ 2 + 9e-4 * j ^ 3 - 2e-5 * j ^ 4 + 1.2e-7 * j ^ 5) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return((-1.2 + 0.11 * j) * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return (-0.3 * cos(2 * pi * j / 6))
+  }
+  
+  comp4 <- function(j) {
+    return (-0.3 * cos(2 * pi * j / 3 + pi / 4))
+  }
+  
+  time_series <- time_series_function(time_series_stamps) + comp4(time_series_stamps)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  comps[[3]] <- comp3(time_series_stamps)
+  comps[[4]] <- comp4(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  roots <- get_roots_eig(s, 12)$roots
+  print(roots)
+  print(get_roots_eig(s, 12)$multiplicities)
+  print(paste0("Максимальное расстояние между корнями в кластере первого корня: ", Mod(roots[2] - roots[8])))
+  alg_root1 <- mean(roots[2:8][-c(4)])
+  
+  print(paste0("Ошибка нахождения первого корня при усреднении правильно найденного кластера: ", Mod(alg_root1 - mu1)))
+  
+  print(paste0("Расстояние между корнями в кластере второго корня: ", Mod(roots[1] - roots[5])))
+  alg_root2 <- mean(c(roots[1], roots[5]))
+  print(paste0("Ошибка нахождения первого корня при усреднении правильно найденного кластера: ", Mod(alg_root2 - mu2)))
+```
+При таком расстоянии между сигнальными корнями второй корень уже находится точнее. Однако при этом расстояние между корнями в кластере первого корня увеличилось. Заметим, что расстояние между корнями в кластере все же меньше, чем расстояние между сигнальными корнями в модели. Следовательно, можно увеличить параметр $\varepsilon$ в кластеризации (теперь знаем, что для получения корней расстояния должны быть как минимум 0.03).
+
+# Сравнение с EOSSA для простых корней
+
+## Пример 1.
+
+Составим для первого примера ряд, где в тренде есть только сигнальный корень кратности 2. Построим тренд с помощью корня $\mu_1 = 0.47 - 0.86i$ кратности $m_1 = 2$. Также добавим гармоники $0.6 \mathsf{cos}(\frac{2\pi n}{4})$ и $0.6 \mathsf{cos}(\frac{2\pi n}{6} - \frac{\pi}{3})$. 
+
+Проверим насколько оправданны такие усложнения модели.
+```{r}
+  mu1 = 0.47 + 0.86i
+  print(paste0("mu_1: ", mu1, ", Mod: ", Mod(mu1)))
+  
+  comp1 <- function(j) {
+    return((0.34 - 0.09 * j) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return (0.6 * cos(2 * pi * j / 4))
+  }
+  
+  time_series <- comp1(time_series_stamps) + comp2(time_series_stamps)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  plot(s)
+  
+  res_exp <- eossa_exp(s, 4, cl_eps = 1e-2)
+  
+  eossa_old <- eossa(s, nested.groups = list(1:4), k = 2)
+  res_old <- reconstruct(eossa_old, groups = eossa_old$iossa.groups)
+```
+
+Посмотрим на ошибку для обычного EOSSA.
+```{r}
+  print("Сумма модулей ошибок, первая выделенная компонента.")
+  for (i in 1:2){
+    print(paste0("Сумма модулей ошибок, сравнение с компонентой номер ", i, ": ", sum(abs(res_old$F1 - comps[[i]]))))
+  }
+
+  print("Сумма модулей ошибок, вторая выделенная компонента.")
+  for (i in 1:2){
+    print(paste0("Сумма модулей ошибок, сравнение с компонентой номер ", i, ": ", sum(abs(res_old$F2 - comps[[i]]))))
+  }
+```
+
+Как можно увидеть, EOSSA для простых корней не выделил компоненты корректно.
+
+Теперь посмотрим на ошибки обобщенного EOSSA.
+
+```{r}
+  print(paste0("Сумма модулей ошибок, идентификация первой компоненты: ", sum(abs(res_exp[[2]] - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, идентификация второй компоненты: ", sum(abs(res_exp[[1]] + res_exp[[3]] - comps[[2]]))))
+```
+
+Компоненты найдены достаточно точно.
+
+## Пример 2.
+
+Составим для первого примера ряд, где в модели тренда сигнальные корни большой кратности. Построим тренд с помощью корня $\mu_1 = 0.32 - 0.94i$ кратности $m_1 = 4$ и корня $\mu_2 = 0.26 + 0.96i$ кратности $m_2 = 3$. Также добавим гармоники $0.4 \mathsf{cos}(\frac{2\pi n}{12})$ и $0.4 \mathsf{cos}(\frac{2\pi n}{6} - \frac{\pi}{4})$. 
+
+```{r}
+  mu1 = 0.32 - 0.94i
+  print(paste0("mu_1: ", mu1, ", Mod: ", Mod(mu1)))
+  
+  mu2 = 0.26 + 0.96i
+  print(paste0("mu_2: ", mu2, ", Mod: ", Mod(mu2)))
+  
+  comp1 <- function(j) {
+    return((5.3 - 0.06 * j + 3e-4 * j ^ 2 - 7.4e-6 * j ^ 3) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return((-2.3 + 0.02 * j - 3.45e-4 * j ^ 2) * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return (0.4 * cos(2 * pi * j / 12))
+  }
+  
+  comp4 <- function(j) {
+    return (0.4 * cos(2 * pi * j / 6 - pi / 4))
+  }
+  
+  time_series <- time_series_function(time_series_stamps) + comp4(time_series_stamps)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  comps[[3]] <- comp3(time_series_stamps)
+  comps[[4]] <- comp4(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  plot(s)
+  
+  eoss <- eossa(s, nested.groups = list(1:11), k = 4)
+  res_old = reconstruct(eoss, groups = eoss$iossa.groups)
+  
+  res_exp = eossa_exp(s, 11, cl_eps = 1e-2)
+```
+
+Посмотрим на ошибку для обычного EOSSA. Посмотрим насколько точно были идентифицированы компоненты тренда. Для удобства будем вычислять минимальную ошибку, сравнивая каждую выделенную компоненту с заданными компонентами.
+```{r}
+  min_err <- Inf
+  print("Первая полученная компонента")
+  for (i in 1:4){
+    min_err <- min(min_err, sum(abs(res_old$F1 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+
+  min_err <- Inf
+
+  print("Вторая полученная компонента")
+  for (i in 1:4){
+    min_err <- min(min_err, sum(abs(res_old$F2 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+  
+  min_err <- Inf
+
+  print("Третья полученная компонента")
+  for (i in 1:4){
+    min_err <- min(min_err, sum(abs(res_old$F3 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+  
+  min_err <- Inf
+
+  print("Четвертая полученная компонента")
+  for (i in 1:4){
+    min_err <- min(min_err, sum(abs(res_old$F4 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+```
+
+По этим результатам можно понять, что обычный EOSSA неправильно выделил компоненты тренда, неправильно выделил гармоники.
+
+Теперь посмотрим на ошибки обобщенного EOSSA.
+
+```{r}
+  print(paste0("Сумма модулей ошибок, идентификация первой компоненты: ", sum(abs(res_exp[[2]] - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, идентификация второй компоненты: ", sum(abs(res_exp[[3]] - comps[[2]]))))
+  print(paste0("Сумма модулей ошибок, идентификация третьей компоненты: ", sum(abs(res_exp[[1]] + res_exp[[6]] - comps[[3]]))))
+  print(paste0("Сумма модулей ошибок, идентификация четвертой компоненты: ", sum(abs(res_exp[[4]] + res_exp[[5]] - comps[[4]]))))
+```
+
+Компоненты найдены достаточно точно.
+
+## Выводы из сравнения
+
+Полученные результаты показали, что обычный EOSSA не идентифицирует компоненты точно, если в модели ряда присутствуют сигнальные корни кратности два или больше. При этом обобщенный EOSSA выделяет компоненты в таких случаях точно (если кратность корней небольшая).
