@@ -463,14 +463,13 @@ get_all_basis <- function(A, roots, m){
   return(list("basis" = basis, "cell_sizes" = cell_sizes))
 }
 
-clusterize_roots <- function(roots) {
+clusterize_roots <- function(roots, cl_eps = 3e-4) {
   N <- length(roots)
   are_used <- numeric(N)
   cluster_num <- 0
   next_center <- 1
   res_roots <- numeric(0)
   res_multiplicities <- numeric(0)
-  eps <- 1e-4
   indexes <- list()
   k <- 0
   
@@ -485,7 +484,7 @@ clusterize_roots <- function(roots) {
     center <- next_center
     next_center <- NA
     for (i in 1:N) {
-      if ((! are_used[i]) & (Mod(roots[i] - roots[center]) < eps)) {
+      if ((! are_used[i]) & (Mod(roots[i] - roots[center]) < cl_eps)) {
         indexes[[k]] <- c(indexes[[k]], i)
         are_used[i] <- 1
         res_roots[cluster_num] <- res_roots[cluster_num] + roots[i]
