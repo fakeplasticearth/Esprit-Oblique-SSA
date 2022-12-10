@@ -4,7 +4,6 @@ library(lmreg)
 library(Rssa)
 
 eps <- 5 * 1e-7
-eps1 <- 1 * 1e-7
 matrix_power <- function(A, N)
 {
   if (N == 0) return (diag(nrow(A)))
@@ -13,7 +12,8 @@ matrix_power <- function(A, N)
 }
 
 get_vec_basis <- function(vecs){
-  eps2 <- eps1 * nrow(vecs)
+  eps2 <- nrow(vecs) * 2e-6
+  print(paste0("precision: ", eps2))
   
   if (ncol(vecs) == 1){
     if (sum(abs(vecs)) < eps)
@@ -40,11 +40,56 @@ get_vec_basis <- function(vecs){
         res <- cbind(res, vecs[,i])
       }
       else if ( norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1))) > eps2 ){
+          print(paste0("Error: ", norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1)))))#
           indices <- c(indices, i)
           res <- cbind(res, vecs[,i])
         }
     }
   }
+  
+  return(list("basis" = res, "indices" = indices))
+}
+
+get_vec_basis2 <- function(vecs, eps2 = NA, need_vecs = NA){
+  if (is.na(eps2))
+    eps2 <- 2e-6 * nrow(vecs)
+  if (ncol(vecs) == 1){
+    if (sum(abs(vecs)) < eps)
+      return(list("basis" = numeric(0), "indices" = numeric(0)))
+    return(list("basis" = vecs, "indices" = c(1)))
+  }
+  res <- numeric(0)
+  indices <- numeric(0)
+  has_vector <- FALSE
+  for (i in 1:ncol(vecs))
+    if (sum(abs(vecs[,i])) > eps){
+      res <- as.matrix(vecs[,i], ncol = 1)
+      indices <- c(indices, i)
+      has_vector <- TRUE
+      break
+    }
+  if (!has_vector)
+    return(list("basis" = numeric(0), "indices" = numeric(0)))
+  min_error <- Inf
+  for (i in 1:ncol(vecs)){
+    coefs <- qr.solve(res, as.matrix(vecs[,i], ncol = 1))
+    if (sum(abs(vecs[,i])) > eps){
+      if ( norm(abs(coefs)) < eps){
+        indices <- c(indices, i)
+        res <- cbind(res, vecs[,i])
+      }
+      else if ( norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1))) > eps2 ){
+        error <- norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1)))
+        if (error < min_error)
+          min_error <- error
+        indices <- c(indices, i)
+        res <- cbind(res, vecs[,i])
+      }
+    }
+  }
+  if (!is.na(need_vecs))
+    if (length(indices) > need_vecs)
+      return (get_vec_basis2(vecs, min_error * 1.01, need_vecs))
   
   return(list("basis" = res, "indices" = indices))
 }
@@ -58,8 +103,8 @@ my_compbasis <- function(vecs, ndim){
   return(res)
 }
 
-get_orthogonal_vec <- function(vecs){
-  return(my_compbasis(get_vec_basis(vecs)$basis, nrow(vecs)))
+get_orthogonal_vec <- function(vecs, need_vecs = NA){
+  return(my_compbasis(get_vec_basis2(vecs, NA, need_vecs)$basis, nrow(vecs)))
 }
 
 get_kernel_basis <- function(B, num){
@@ -120,7 +165,7 @@ get_coef <- function(basis1, basis2, num_vecs){
         next
       }
       
-      s_basis <- get_vec_basis(S)
+      s_basis <- get_vec_basis2(S, NA, ncol(S) - (num_vecs - added_vecs))
       
       index1 <- 1
       not_basis_index <- 1
@@ -173,7 +218,7 @@ get_lin_ind <- function(basis1, basis2, num_vecs){
     if (added_num == num_vecs)
       break
     
-    row_basis <- get_vec_basis(t(basis2))
+    row_basis <- get_vec_basis2(t(basis2))
     basis2_corr <- t(row_basis$basis)
     b_corr <- basis1[row_basis$indices,i]
     
