@@ -12,11 +12,17 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r, message = FALSE, warning = FALSE}
   source("jordan_util.R")
   library(QZ)
+  library(plotrix)
 ```
 
 ## Реализация EOSSA для случая кратных корней
 
 ```{r}
+  plot_roots <- function(roots){
+    plot(roots, asp = 1, xlim = c(-1,1), ylim = c(-1,1))  
+    draw.circle(0,0,1,nv=1000,border=NULL,col=NA,lty=1,lwd=1)
+  }
+
   eossa_exp <- function(ssa_obj, ecomp_num, cl_eps = 3e-4){
     w_length <- ssa_obj$window
     U <- ssa_obj$U[,1:ecomp_num]
@@ -30,6 +36,7 @@ knitr::opts_chunk$set(echo = TRUE)
     dec <- eigen(M)
     #roots <- parestimate(ssa_obj, groups = list(1:ecomp_num), method = "esprit")$roots#
     roots <- dec$values
+    plot_roots(roots)
     res <- clusterize_roots(roots, cl_eps)
     print("Корни")
     print(res$roots)
@@ -40,6 +47,11 @@ knitr::opts_chunk$set(echo = TRUE)
     print(eigen(M)$values)
     
     basis <- get_all_basis(M, res$roots, res$multiplicities)
+    
+    if (nrow(basis$basis) > ncol(basis$basis)){
+      print("Wrong basis")
+      return(numeric(0))
+    }
     
     jordan_basis <- basis$basis
     jordan_basis_inv <- qr.solve(jordan_basis)
@@ -677,7 +689,7 @@ knitr::opts_chunk$set(echo = TRUE)
   
   res_exp <- eossa_exp(s, 4, cl_eps = 1e-2)
   
-  eossa_old <- eossa(s, nested.groups = list(1:4), k = 2)
+  eossa_old <- eossa(s, nested.groups = list(1:4), k = 2, solve.method = "tls")
   res_old <- reconstruct(eossa_old, groups = eossa_old$iossa.groups)
 ```
 
@@ -723,7 +735,7 @@ knitr::opts_chunk$set(echo = TRUE)
   
   res_exp <- eossa_exp(s, 7, cl_eps = 1e-2)
   
-  eossa_old <- eossa(s, nested.groups = list(1:7), k = 2)
+  eossa_old <- eossa(s, nested.groups = list(1:7), k = 2, solve.method = "tls")
   res_old <- reconstruct(eossa_old, groups = eossa_old$iossa.groups)
 ```
 
@@ -777,7 +789,7 @@ knitr::opts_chunk$set(echo = TRUE)
   s <- ssa(time_series, L = 48, svd.method = "svd")
   plot(s)
   
-  eoss <- eossa(s, nested.groups = list(1:6), k = 3)
+  eoss <- eossa(s, nested.groups = list(1:6), k = 3, solve.method = "tls")
   res_old = reconstruct(eoss, groups = eoss$iossa.groups)
   
   res_exp = eossa_exp(s, 6, cl_eps = 1e-2)
@@ -863,7 +875,7 @@ knitr::opts_chunk$set(echo = TRUE)
   s <- ssa(time_series, L = 24, svd.method = "svd")
   plot(s)
   
-  eoss <- eossa(s, nested.groups = list(1:14), k = 5)
+  eoss <- eossa(s, nested.groups = list(1:14), k = 5, solve.method = "tls")
   res_old = reconstruct(eoss, groups = eoss$iossa.groups)
   
   res_exp = eossa_exp(s, 14, cl_eps = 3e-2)
@@ -968,7 +980,7 @@ knitr::opts_chunk$set(echo = TRUE)
   s <- ssa(time_series, L = 24, svd.method = "svd")
   plot(s)
   
-  eoss <- eossa(s, nested.groups = list(1:16), k = 5)
+  eoss <- eossa(s, nested.groups = list(1:16), k = 5, solve.method = "tls")
   res_old = reconstruct(eoss, groups = eoss$iossa.groups)
   
   res_exp = eossa_exp(s, 16, cl_eps = 3e-2)
@@ -1031,3 +1043,638 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 Компоненты выделились немного точнее.
+
+# Сравнение с шумом
+
+## Пример 1.
+
+Составим для первого примера ряд, в модели которого кратности сигнальных корней небольшие. Построим тренд с помощью корня $\mu_1 = 0.98$ кратности $m_1 = 2$. Также добавим гармонику $0.6 \mathsf{cos}(\frac{2\pi n}{4})$. Также добавим белый гауссовский шум $\mathcal{N}(0, 0.05^2)$.
+
+```{r}
+  mu1 = 0.98
+  
+  comp1 <- function(j) {
+    return((0.34 - 0.09 * j) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return (0.6 * cos(2 * pi * j / 4))
+  }
+  
+  time_series <- comp1(time_series_stamps) + comp2(time_series_stamps) + rnorm(length(time_series_stamps), mean = 0, sd = 0.05)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  plot(s)
+  
+  res_exp <- eossa_exp(s, 4, cl_eps = 3e-2)
+  
+  eossa_old <- eossa(s, nested.groups = list(1:4), k = 2, solve.method = "tls")
+  res_old <- reconstruct(eossa_old, groups = eossa_old$iossa.groups)
+```
+
+Видно, что при небольшом шуме уже кратные корни отклоняются от теоретической модели.
+
+Посмотрим на ошибку для обычного EOSSA.
+```{r}
+  print(paste0("Сумма модулей ошибок, первая выделенная компонента: ", sum(abs(res_old$F1 - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, вторая выделенная компонента: ", sum(abs(res_old$F2 - comps[[2]]))))
+```
+
+Как можно увидеть, что EOSSA для простых корней получил достаточно большие ошибки.
+
+Теперь посмотрим на ошибки обобщенного EOSSA.
+```{r}
+  if (length(res_exp) == 0){
+    print("Неверное разложение.")
+  } else{
+    print(paste0("Сумма модулей ошибок, идентификация первой компоненты: ", sum(abs(res_exp[[2]] - comps[[1]]))))
+    print(paste0("Сумма модулей ошибок, идентификация второй компоненты: ", sum(abs(res_exp[[1]] + res_exp[[3]] - comps[[2]]))))
+  }
+```
+Разложение не было получено корректно.
+
+## Пример 2.
+
+Посмотрим что будет, если в тренде только корень большой кратности.
+
+Построим тренд с помощью корня $\mu_1 = 0.98$ кратности $m_1 = 5$. Также добавим гармонику $0.4 \mathsf{cos}(\frac{2\pi n}{12})$. Также добавим белый гауссовский шум $\mathcal{N}(0, 0.005^2)$.
+
+```{r}
+  mu1 = 0.98
+  
+  comp1 <- function(j) {
+    return((0.34 - 0.09 * j + 3e-4 * j ^ 2 - 4.5e-6 * j ^ 3 + 2.3e-8 * j ^ 4) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return (0.4 * cos(2 * pi * j / 12))
+  }
+  
+  time_series <- comp1(time_series_stamps) + comp2(time_series_stamps) + rnorm(length(time_series_stamps), mean = 0, sd = 0.005)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  plot(s)
+  
+  res_exp <- eossa_exp(s, 7, cl_eps = 1e-2)
+  
+  eossa_old <- eossa(s, nested.groups = list(1:7), k = 2, solve.method = "tls")
+  res_old <- reconstruct(eossa_old, groups = eossa_old$iossa.groups)
+```
+
+Здесь добавление шума показало, что корень большой кратности при шуме вообще практически невозможно найти.
+
+Посмотрим на ошибки обычного EOSSA.
+
+```{r}
+  print(paste0("Сумма модулей ошибок, выделение тренда: ", sum(abs(res_old$F1 - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, выделение гармоники: ", sum(abs(res_old$F2 - comps[[2]]))))
+```
+
+Огромные ошибки.
+
+Теперт посмотрим на ошибки обобщенного EOSSA.
+
+```{r}
+  if (length(res_exp) == 0){
+    print("Неверное разложение.")
+  } else{
+     print(paste0("Сумма модулей ошибок, выделение тренда: ", sum(abs(res_exp[[1]] + res_exp[[3]] - comps[[2]]))))
+    print(paste0("Сумма модулей ошибок, выделение гармоники: ", sum(abs(res_exp[[2]] - comps[[1]]))))
+  }
+```
+
+Тоже огромные ошибки.
+
+## Пример 3.
+
+Усложним задачу. Пусть теперь в модели тренда два сигнальных корня небольшой кратности.
+
+Построим тренд с помощью корня $\mu_1 = 0.98$ кратности $m_1 = 2$ и корня $\mu_2 = 1.02$ кратности $m_2 = 2$. Также добавим гармонику $0.4 \mathsf{cos}(\frac{2\pi n}{12})$. Также добавим белый гауссовский шум $\mathcal{N}(0, 0.0005^2)$.
+
+```{r}
+  mu1 = 0.98
+  
+  mu2 = 1.02
+  
+  comp1 <- function(j) {
+    return((5.3 - 0.03 * j) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return((-2.7 + 0.08 * j) * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return (0.4 * cos(2 * pi * j / 12))
+  }
+  
+  time_series <- time_series_function(time_series_stamps) + rnorm(length(time_series_stamps), mean = 0, sd = 0.0005)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  comps[[3]] <- comp3(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  plot(s)
+  
+  eoss <- eossa(s, nested.groups = list(1:6), k = 3, solve.method = "tls")
+  res_old = reconstruct(eoss, groups = eoss$iossa.groups)
+  
+  #res_exp = eossa_exp(s, 6, cl_eps = 1e-2)
+  ssa_obj <- s
+  w_length <- ssa_obj$window
+    U <- ssa_obj$U[,1:6]
+    V <- ssa_obj$V[,1:6]
+    vals <- diag(ssa_obj$sigma[1:6])
+    
+    P_low <- U[1:(w_length - 1),]
+    P_up <- U[2:w_length,]
+    M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
+    
+    dec <- eigen(M)
+    #roots <- parestimate(ssa_obj, groups = list(1:ecomp_num), method = "esprit")$roots#
+    roots <- dec$values
+    res <- clusterize_roots(roots, 3e-2)
+    print("Корни")
+    print(res$roots)
+    print("Кратности")
+    print(res$multiplicities)
+```
+
+Этот пример также показал, что кластеризация корней бесполезна при кратных корнях с добавлением даже совсем небольшого шума. Кратности определяются неверно.
+
+# Сравнение при одинаковом получении базиса
+
+Здесь оставим идею с кластеризацией кратных корней здесь, просто не будем применять шум. Попробуем модифицировать обобщенный eossa, вместо жорданового базиса будем получать базис в собственном подпространстве.
+
+```{r}
+  eossa_exp2 <- function(ssa_obj, ecomp_num, cl_eps = 3e-4){
+    w_length <- ssa_obj$window
+    U <- ssa_obj$U[,1:ecomp_num]
+    V <- ssa_obj$V[,1:ecomp_num]
+    vals <- diag(ssa_obj$sigma[1:ecomp_num])
+    
+    P_low <- U[1:(w_length - 1),]
+    P_up <- U[2:w_length,]
+    M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
+    
+    dec <- eigen(M)
+    #roots <- parestimate(ssa_obj, groups = list(1:ecomp_num), method = "esprit")$roots#
+    roots <- dec$values
+    res <- clusterize_roots(roots, cl_eps)
+    print("Корни")
+    print(res$roots)
+    print("Кратности")
+    print(res$multiplicities)
+    
+    print("Разложение М")
+    print(eigen(M)$values)
+    
+    basis <- numeric(0)
+    for (i in 1:length(res$multiplicities)){
+      basis <- cbind(basis, get_kernel_basis(M - res$roots[[i]] * diag(nrow = nrow(M)), res$multiplicities[[i]]))
+    }
+    if (nrow(basis) > ncol(basis)){
+      print("Wrong basis")
+      return(numeric(0))
+    }
+    
+    jordan_basis <- basis
+    jordan_basis_inv <- qr.solve(jordan_basis)
+    components <- list()
+    
+    left <- U %*% jordan_basis
+    right <- numeric(0)
+    if (is.complex(V))
+      right <- jordan_basis_inv %*% vals %*% H(V)
+    else
+      right <- jordan_basis_inv %*% vals %*% t(V)
+    
+    prev_m <- 0
+    left_side <- numeric(0)
+    right_side <- numeric(0)
+    
+    for (i in 1:length(res$roots)){
+      
+      if (res$multiplicities[i] == 1){
+        left_side <- matrix(left[,(1 + prev_m):(prev_m + 1)], ncol = 1)
+        right_side <- matrix(right[(1 + prev_m):(prev_m + 1),], nrow = 1)
+      }
+      else{
+        left_side <- left[,(1 + prev_m):(prev_m + res$multiplicities[i])]
+        right_side <- right[(1 + prev_m):(prev_m + res$multiplicities[i]),]
+      }
+      
+      components[[i]] <- Rssa::hankel(left_side %*% right_side)
+      
+      prev_m <- prev_m + res$multiplicities[i]
+    }
+    return(components)
+  }
+```
+
+## Пример 1.
+
+Составим для первого примера ряд, в модели которого кратности сигнальных корней небольшие. Построим тренд с помощью корня $\mu_1 = 0.98$ кратности $m_1 = 2$. Также добавим гармонику $0.6 \mathsf{cos}(\frac{2\pi n}{4})$. 
+
+```{r}
+  mu1 = 0.98
+  
+  comp1 <- function(j) {
+    return((0.34 - 0.09 * j) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return (0.6 * cos(2 * pi * j / 4))
+  }
+  
+  time_series <- comp1(time_series_stamps) + comp2(time_series_stamps)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  plot(s)
+  
+  res_exp <- eossa_exp2(s, 4, cl_eps = 3e-2)
+  
+  eossa_old <- eossa(s, nested.groups = list(1:4), k = 2, solve.method = "tls")
+  res_old <- reconstruct(eossa_old, groups = eossa_old$iossa.groups)
+```
+
+Посмотрим на ошибку для обычного EOSSA.
+```{r}
+  print(paste0("Сумма модулей ошибок, первая выделенная компонента: ", sum(abs(res_old$F1 - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, вторая выделенная компонента: ", sum(abs(res_old$F2 - comps[[2]]))))
+```
+
+Как можно увидеть, что EOSSA для простых корней точно идентифицировал компоненты.
+
+Теперь посмотрим на ошибки обобщенного EOSSA.
+```{r}
+  print(paste0("Сумма модулей ошибок, идентификация первой компоненты: ", sum(abs(res_exp[[2]] - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, идентификация второй компоненты: ", sum(abs(res_exp[[1]] + res_exp[[3]] - comps[[2]]))))
+```
+Ошибка достаточно большая. Можно сделать вывод, что недостаточно просто найти базис собственного подпространства.
+
+Теперь попробуем вообще сделать все то же самое (просто проверить, что все остальное работает верно).
+
+```{r}
+  eossa_exp3 <- function(ssa_obj, ecomp_num, cl_eps = 3e-4, k){
+    w_length <- ssa_obj$window
+    U <- ssa_obj$U[,1:ecomp_num]
+    V <- ssa_obj$V[,1:ecomp_num]
+    vals <- diag(ssa_obj$sigma[1:ecomp_num])
+    
+    P_low <- U[1:(w_length - 1),]
+    P_up <- U[2:w_length,]
+    M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
+    
+    dec <- eigen(M)
+    #roots <- parestimate(ssa_obj, groups = list(1:ecomp_num), method = "esprit")$roots#
+    roots <- dec$values
+    res <- clusterize_roots(roots, cl_eps)
+    print("Корни")
+    print(res$roots)
+    print("Кратности")
+    print(res$multiplicities)
+    
+    print("Разложение М")
+    print(eigen(M)$values)
+    
+    ord <- order(abs(Arg(roots)))
+    roots <- roots[ord]
+    M_U <- dec$vectors[, ord, drop = FALSE]
+  
+    d <- stats::dist(cbind(Re(roots), abs(Im(roots))), method = "euclidian") # TODO Use the proper distance from KDU
+  
+    hc <- hclust(d, method = "complete")
+  
+    idx <- cutree(hc, k = k, h = NULL)
+  
+    groups <- tapply(seq_along(idx), idx, identity)
+    names(groups) <- paste("F", names(groups), sep = "")
+  
+    for (group in groups) {
+      print(cbind(Re(M_U[, group, drop = FALSE]),
+                                            Im(M_U[, group, drop = FALSE])))
+      M_U[, group] <- svd(cbind(Re(M_U[, group, drop = FALSE]),
+                                            Im(M_U[, group, drop = FALSE])),
+                                      nu = length(group), nv = 0)$u
+    }
+  
+    M_U <- Re(M_U)
+    print("basis")
+    print(M_U)
+    print("eig basis")
+    print(dec$vectors)
+    
+    ans <- list()
+    inverted_basis <- qr.solve(M_U)
+    
+    left <- U %*% M_U
+    right <- numeric(0)
+    if (is.complex(V))
+      right <- inverted_basis %*% vals %*% H(V)
+    else
+      right <- inverted_basis %*% vals %*% t(V)
+    
+    ind <- 1
+    for (group in groups){
+      left_side <- numeric(0)
+      right_side <- numeric(0)
+      if (length(group) > 1){
+        left_side <- left[, group]
+        right_side <- right[group, ]
+      }
+      else {
+        left_side <- matrix(left[, group], ncol = 1)
+        right_side <- matrix(right[group, ], nrow = 1)
+      }
+      ans[[ind]] <- Rssa:::hankel(left_side %*% right_side)
+      ind <- ind + 1
+    }
+    return(ans)
+  }
+```
+
+## Пример 1.
+
+Составим для первого примера ряд, в модели которого кратности сигнальных корней небольшие. Построим тренд с помощью корня $\mu_1 = 0.98$ кратности $m_1 = 2$. Также добавим гармонику $0.6 \mathsf{cos}(\frac{2\pi n}{4})$. 
+
+```{r}
+  mu1 = 0.98
+  
+  comp1 <- function(j) {
+    return((0.34 - 0.09 * j) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return (0.6 * cos(2 * pi * j / 4))
+  }
+  
+  time_series <- comp1(time_series_stamps) + comp2(time_series_stamps)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  plot(s)
+  
+  res_exp <- eossa_exp3(s, 4, cl_eps = 1e-2, k = 2)
+  
+  eossa_old <- eossa(s, nested.groups = list(1:4), k = 2, solve.method = "tls")
+  res_old <- reconstruct(eossa_old, groups = eossa_old$iossa.groups)
+```
+
+Посмотрим на ошибку для обычного EOSSA.
+```{r}
+  print(paste0("Сумма модулей ошибок, первая выделенная компонента: ", sum(abs(res_old$F1 - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, вторая выделенная компонента: ", sum(abs(res_old$F2 - comps[[2]]))))
+```
+
+Как можно увидеть, что EOSSA для простых корней точно идентифицировал компоненты.
+
+Теперь посмотрим на ошибки обобщенного EOSSA.
+```{r}
+  print(paste0("Сумма модулей ошибок, идентификация первой компоненты: ", sum(abs(res_exp[[1]] - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, идентификация второй компоненты: ", sum(abs(res_exp[[2]] - comps[[2]]))))
+```
+Компоненты найдены достаточно точно.
+
+## Пример 2.
+
+Посмотрим что будет, если в тренде только корень большой кратности.
+
+Построим тренд с помощью корня $\mu_1 = 0.98$ кратности $m_1 = 5$. Также добавим гармонику $0.4 \mathsf{cos}(\frac{2\pi n}{12})$. 
+
+```{r}
+  mu1 = 0.98
+  
+  comp1 <- function(j) {
+    return((0.34 - 0.09 * j + 3e-4 * j ^ 2 - 4.5e-6 * j ^ 3 + 2.3e-8 * j ^ 4) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return (0.4 * cos(2 * pi * j / 12))
+  }
+  
+  time_series <- comp1(time_series_stamps) + comp2(time_series_stamps)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  plot(s)
+  
+  res_exp <- eossa_exp3(s, 7, cl_eps = 1e-2, k = 2)
+  
+  eossa_old <- eossa(s, nested.groups = list(1:7), k = 2, solve.method = "tls")
+  res_old <- reconstruct(eossa_old, groups = eossa_old$iossa.groups)
+```
+
+Посмотрим на ошибки обычного EOSSA.
+
+```{r}
+  print(paste0("Сумма модулей ошибок, выделение тренда: ", sum(abs(res_old$F1 - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, выделение гармоники: ", sum(abs(res_old$F2 - comps[[2]]))))
+```
+
+Компоненты найдены достаточно точно.
+
+Теперт посмотрим на ошибки обобщенного EOSSA.
+
+```{r}
+  print(paste0("Сумма модулей ошибок, выделение тренда: ", sum(abs(res_exp[[1]] - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, выделение гармоники: ", sum(abs(res_exp[[2]] - comps[[2]]))))
+```
+
+Компоненты найдены достаточно точно.
+
+## Пример 3.
+
+Усложним задачу. Пусть теперь в можели тренда два сигнальных корня небольшой кратности.
+
+Построим тренд с помощью корня $\mu_1 = 0.98$ кратности $m_1 = 2$ и корня $\mu_2 = 1.02$ кратности $m_2 = 2$. Также добавим гармонику $0.4 \mathsf{cos}(\frac{2\pi n}{12})$. 
+
+```{r}
+  mu1 = 0.98
+  
+  mu2 = 1.02
+  
+  comp1 <- function(j) {
+    return((5.3 - 0.03 * j) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return((-2.7 + 0.08 * j) * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return (0.4 * cos(2 * pi * j / 12))
+  }
+  
+  time_series <- time_series_function(time_series_stamps)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps)
+  comps[[2]] <- comp2(time_series_stamps)
+  comps[[3]] <- comp3(time_series_stamps)
+  
+  s <- ssa(time_series, L = 48, svd.method = "svd")
+  plot(s)
+  
+  eoss <- eossa(s, nested.groups = list(1:6), k = 3, solve.method = "tls")
+  res_old = reconstruct(eoss, groups = eoss$iossa.groups)
+  
+  res_exp = eossa_exp3(s, 6, cl_eps = 1e-2, k = 3)
+```
+
+Посмотрим на ошибку для обычного EOSSA. Посмотрим насколько точно были идентифицированы компоненты тренда. Для удобства будем вычислять минимальную ошибку, сравнивая каждую выделенную компоненту с заданными компонентами.
+```{r}
+  min_err <- Inf
+  print("Первая полученная компонента")
+  for (i in 1:3){
+    min_err <- min(min_err, sum(abs(res_old$F1 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+
+  min_err <- Inf
+
+  print("Вторая полученная компонента")
+  for (i in 1:3){
+    min_err <- min(min_err, sum(abs(res_old$F2 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+  
+  min_err <- Inf
+
+  print("Третья полученная компонента")
+  for (i in 1:3){
+    min_err <- min(min_err, sum(abs(res_old$F3 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+```
+
+Компоненты найдены достаточно точно.
+
+Теперь посмотрим на ошибки обобщенного EOSSA.
+
+```{r}
+  print(paste0("Сумма модулей ошибок, идентификация первой компоненты: ", sum(abs(res_exp[[1]] - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, идентификация второй компоненты: ", sum(abs(res_exp[[2]] - comps[[2]]))))
+  print(paste0("Сумма модулей ошибок, идентификация третьей компоненты: ", sum(abs(res_exp[[3]] - comps[[3]]))))
+```
+Компоненты найдены достаточно точно.
+
+Из полученных результатов можно сделать вывод, что базис, который строится в обычном EOSSA, действительно позволяет строить разложение корректно даже в случае кратных корней.
+
+# Примеры где обобщенный все же точнее
+
+```{r}
+  mu1 = -0.92
+  
+  mu2 = 0.97
+  
+  mu3 = -1.02
+  
+  comp1 <- function(j) {
+    return((2.5 - 0.33 * j) * mu1 ^ j)
+  }
+  
+  comp2 <- function(j) {
+    return((22.9 - 0.04 * j + 4.5e-2 * j ^ 2 - 8e-4 * j ^ 3) * mu2 ^ j)
+  }
+  
+  comp3 <- function(j) {
+    return((-17 + 0.13 * j) * mu3 ^ j)
+  }
+  
+  comp4 <- function(j){
+    return(4.5 * cos(2 * pi * j / 12))
+  }
+  
+  comp5 <- function(j){
+    return(4.5 * cos(2 * pi * j / 3 - pi / 3))
+  }
+  
+  time_series_stamps2 = 1:50
+  time_series <- time_series_function(time_series_stamps2) + comp4(time_series_stamps2) + comp5(time_series_stamps2)
+  comps <- list()
+  comps[[1]] <- comp1(time_series_stamps2)
+  comps[[2]] <- comp2(time_series_stamps2)
+  comps[[3]] <- comp3(time_series_stamps2)
+  comps[[4]] <- comp4(time_series_stamps2)
+  comps[[5]] <- comp5(time_series_stamps2)
+  
+  s <- ssa(time_series, L = 24, svd.method = "svd")
+  plot(s)
+  
+  eoss <- eossa(s, nested.groups = list(1:12), k = 5, solve.method = "tls")
+  res_old = reconstruct(eoss, groups = eoss$iossa.groups)
+  
+  res_exp = eossa_exp(s, 12, cl_eps = 3e-2)
+```
+
+Посмотрим на ошибки обычного EOSSA.
+
+```{r}
+  min_err <- Inf
+  print("Первая полученная компонента")
+  for (i in 1:5){
+    min_err <- min(min_err, sum(abs(res_old$F1 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+
+  min_err <- Inf
+
+  print("Вторая полученная компонента")
+  for (i in 1:5){
+    min_err <- min(min_err, sum(abs(res_old$F2 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+  
+  min_err <- Inf
+
+  print("Третья полученная компонента")
+  for (i in 1:5){
+    min_err <- min(min_err, sum(abs(res_old$F3 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+  
+   min_err <- Inf
+
+  print("Четвертая полученная компонента")
+  for (i in 1:5){
+    min_err <- min(min_err, sum(abs(res_old$F4 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+  
+  min_err <- Inf
+
+  print("Пятая полученная компонента")
+  for (i in 1:5){
+    min_err <- min(min_err, sum(abs(res_old$F5 - comps[[i]])))
+  }
+  print(paste0("Минимальная сумма модулей ошибок, сравнение со всеми компонентами: ", min_err))
+  
+```
+
+Компоненты выделились точно.
+
+Посмотрим на ошибки обобщенного EOSSA.
+
+```{r}
+  print(paste0("Сумма модулей ошибок, идентификация первой компоненты: ", sum(abs(res_exp[[2]] - comps[[1]]))))
+  print(paste0("Сумма модулей ошибок, идентификация второй компоненты: ", sum(abs(res_exp[[3]] - comps[[2]]))))
+  print(paste0("Сумма модулей ошибок, идентификация третьей компоненты: ", sum(abs(res_exp[[1]] - comps[[3]]))))
+  print(paste0("Сумма модулей ошибок, идентификация третьей компоненты: ", sum(abs(res_exp[[6]] + res_exp[[7]] - comps[[4]]))))
+  print(paste0("Сумма модулей ошибок, идентификация третьей компоненты: ", sum(abs(res_exp[[4]] + res_exp[[5]] - comps[[5]]))))
+```
+
+Компоненты выделились точнее.
