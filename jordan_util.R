@@ -113,7 +113,7 @@ get_kernel_basis <- function(B, num){
   if (num == 1)
     return(as.matrix(get_orthogonal_vec(t(B))[,1], ncol = 1))
   else
-    return(get_orthogonal_vec(t(B))[,1:num]) 
+    return(get_orthogonal_vec(t(B), nrow(B) - num)[,1:num]) 
 }
 
 #Функция ищет нужное количество векторов ортогональных базису basis2 из пространства, которое соответствует basis1 
