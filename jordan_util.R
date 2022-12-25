@@ -11,45 +11,6 @@ matrix_power <- function(A, N)
   return (A %*% matrix_power(A, N - 1))
 }
 
-get_vec_basis <- function(vecs){
-  eps2 <- nrow(vecs) * 2e-6
-  print(paste0("precision: ", eps2))
-  
-  if (ncol(vecs) == 1){
-    if (sum(abs(vecs)) < eps)
-      return(list("basis" = numeric(0), "indices" = numeric(0)))
-    return(list("basis" = vecs, "indices" = c(1)))
-  }
-  res <- numeric(0)
-  indices <- numeric(0)
-  has_vector <- FALSE
-  for (i in 1:ncol(vecs))
-    if (sum(abs(vecs[,i])) > eps){
-      res <- as.matrix(vecs[,i], ncol = 1)
-      indices <- c(indices, i)
-      has_vector <- TRUE
-      break
-    }
-  if (!has_vector)
-    return(list("basis" = numeric(0), "indices" = numeric(0)))
-  for (i in 1:ncol(vecs)){
-    coefs <- qr.solve(res, as.matrix(vecs[,i], ncol = 1))
-    if (sum(abs(vecs[,i])) > eps){
-      if ( norm(abs(coefs)) < eps){
-        indices <- c(indices, i)
-        res <- cbind(res, vecs[,i])
-      }
-      else if ( norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1))) > eps2 ){
-          print(paste0("Error: ", norm(abs(res %*% coefs - as.matrix(vecs[,i], ncol = 1)))))#
-          indices <- c(indices, i)
-          res <- cbind(res, vecs[,i])
-        }
-    }
-  }
-  
-  return(list("basis" = res, "indices" = indices))
-}
-
 get_vec_basis2 <- function(vecs, eps2 = NA, need_vecs = NA){
   if (is.na(eps2))
     eps2 <- 2e-6 * nrow(vecs)
@@ -62,7 +23,7 @@ get_vec_basis2 <- function(vecs, eps2 = NA, need_vecs = NA){
   indices <- numeric(0)
   has_vector <- FALSE
   for (i in 1:ncol(vecs))
-    if (sum(abs(vecs[,i])) > eps){
+    if (sum(abs(vecs[,i])) > eps2){
       res <- as.matrix(vecs[,i], ncol = 1)
       indices <- c(indices, i)
       has_vector <- TRUE
@@ -111,7 +72,7 @@ get_kernel_basis <- function(B, num){
   if (num == 0)
     return(numeric(0))
   if (num == 1)
-    return(as.matrix(get_orthogonal_vec(t(B))[,1], ncol = 1))
+    return(as.matrix(get_orthogonal_vec(t(B), nrow(B) - 1)[,1], ncol = 1))
   else
     return(get_orthogonal_vec(t(B), nrow(B) - num)[,1:num]) 
 }
@@ -144,7 +105,7 @@ get_coef <- function(basis1, basis2, num_vecs){
     while(added_vecs < num_vecs){
       S <- t(res_basis) %*% vecs
       
-      rk_s <- rankMatrix(S, tol = 1e-7)
+      rk_s <- rankMatrix(S)
       if (rk_s == 1){
         #Берем ненулевой элемент
         n0_index <- numeric(0)
@@ -238,10 +199,10 @@ get_lin_ind <- function(basis1, basis2, num_vecs){
 get_vecs <- function(B, res_basis, cell_sizes, ranks, k, m){
   
   B_curr <- correct_matrix(matrix_power(B, k))
-  rk_curr <- rankMatrix(B_curr, tol=1e-7)
+  rk_curr <- rankMatrix(B_curr, tol = 4e-2)
   
   B_prev <- correct_matrix(matrix_power(B, k - 1))
-  rk_prev <- rankMatrix(B_prev, tol=1e-7)
+  rk_prev <- rankMatrix(B_prev, tol = 4e-2)
   
   num_joined_curr <- numeric(0)
   if (length(res_basis) == 0){
@@ -292,6 +253,7 @@ get_vecs <- function(B, res_basis, cell_sizes, ranks, k, m){
     ort_vecs <- get_orthogonal_vec(vecs)
     
     for (i in 1:(rk_prev - rk_curr)){
+      added_num <- 0
       curr_block <- numeric(0)
       curr_block <- cbind(ort_vecs[,i], curr_block)
       added_num <- added_num + 1
@@ -447,9 +409,9 @@ get_vecs <- function(B, res_basis, cell_sizes, ranks, k, m){
 
 # Возникла проблема, если оптимально вычислять здесь степени, то матрицы сильно отличаются от настоящих. Поэтому здесь неоптимально ищутся степени.
 find_k <- function(B){
+  H <- correct_matrix(B)
   k <- 1
-  C <- correct_matrix(B)
-  rk <- rankMatrix(C, tol=1e-7)
+  rk <- rankMatrix(H, tol = 4e-2)
   prev_rk <- rk + 1
   B_curr <- B
   while(rk - prev_rk < 0){
@@ -461,7 +423,7 @@ find_k <- function(B){
       break
     }
     prev_rk <- rk
-    rk <- rankMatrix(B_curr, tol = 1e-7)
+    rk <- rankMatrix(B_curr, tol = 4e-2)
   }
   return (k - 1)
 }
@@ -565,4 +527,16 @@ get_roots_eig <- function(ssa_obj, num_roots){
   roots <- dec$values
   res <- clusterize_roots(roots)
   return(res)
+}
+
+get_rank <- function(B, eps = NA){
+  res <- get_vec_basis2(B, eps, NA)$basis
+  if (length(res) > 0){
+    if (is.null(ncol(res)))
+      return(1)
+    else
+      return(ncol(res))
+  }
+  else
+    return(0)
 }

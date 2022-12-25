@@ -1,0 +1,272 @@
+---
+title: ''
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message = FALSE, warning = FALSE}
+  source("jordan_util.R")
+  library(QZ)
+  library(plotrix)
+```
+
+## Реализация EOSSA для случая кратных корней
+
+```{r}
+  print_roots <- function(ssa_obj, ecomp_num, cl_eps = 3e-4){
+    w_length <- ssa_obj$window
+    U <- ssa_obj$U[,1:ecomp_num]
+    V <- ssa_obj$V[,1:ecomp_num]
+    vals <- diag(ssa_obj$sigma[1:ecomp_num])
+    if (is.null(V)){
+      svd_res <- svd(Rssa:::hankel(s$F))
+      U <- (svd_res$u)[,1:ecomp_num]
+      V <- (svd_res$v)[,1:ecomp_num]
+      vals <- diag((svd_res$d)[1:ecomp_num])
+    }
+    
+    P_low <- U[1:(w_length - 1),]
+    P_up <- U[2:w_length,]
+    M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
+    
+    dec <- eigen(M)
+    #roots <- parestimate(ssa_obj, groups = list(1:ecomp_num), method = "esprit")$roots#
+    roots <- dec$values
+    plot_roots(roots)
+    res <- clusterize_roots(roots, cl_eps)
+    print("Корни")
+    print(res$roots)
+    print("Кратности")
+    print(res$multiplicities)
+    
+    print("Разложение М")
+    print(eigen(M)$values)
+  }
+
+  plot_roots <- function(roots){
+    plot(roots, asp = 1, xlim = c(-1,1), ylim = c(-1,1))  
+    draw.circle(0,0,1,nv=1000,border=NULL,col=NA,lty=1,lwd=1)
+  }
+  
+  eossa_exp <- function(ssa_obj, ecomp_num, cl_eps = 3e-4){
+    w_length <- ssa_obj$window
+    U <- ssa_obj$U[,1:ecomp_num]
+    V <- ssa_obj$V[,1:ecomp_num]
+    vals <- diag(ssa_obj$sigma[1:ecomp_num])
+    if (is.null(V)){
+      svd_res <- svd(Rssa:::hankel(s$F))
+      U <- (svd_res$u)[,1:ecomp_num]
+      V <- (svd_res$v)[,1:ecomp_num]
+      vals <- diag((svd_res$d)[1:ecomp_num])
+    }
+    
+    P_low <- U[1:(w_length - 1),]
+    P_up <- U[2:w_length,]
+    M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
+    
+    dec <- eigen(M)
+    #roots <- parestimate(ssa_obj, groups = list(1:ecomp_num), method = "esprit")$roots#
+    roots <- dec$values
+    plot_roots(roots)
+    res <- clusterize_roots(roots, cl_eps)
+    print("Корни")
+    print(res$roots)
+    print("Кратности")
+    print(res$multiplicities)
+    
+    print("Разложение М")
+    print(eigen(M)$values)
+    
+    basis <- get_all_basis(M, res$roots, res$multiplicities)
+    
+    if (nrow(basis$basis) > ncol(basis$basis)){
+      print("Wrong basis")
+      return(numeric(0))
+    }
+    
+    jordan_basis <- basis$basis
+    jordan_basis_inv <- qr.solve(jordan_basis)
+    components <- list()
+    
+    left <- U %*% jordan_basis
+    right <- numeric(0)
+    if (is.complex(V))
+      right <- jordan_basis_inv %*% vals %*% H(V)
+    else
+      right <- jordan_basis_inv %*% vals %*% t(V)
+    
+    prev_m <- 0
+    left_side <- numeric(0)
+    right_side <- numeric(0)
+    
+    for (i in 1:length(res$roots)){
+      
+      if (res$multiplicities[i] == 1){
+        left_side <- matrix(left[,(1 + prev_m):(prev_m + 1)], ncol = 1)
+        right_side <- matrix(right[(1 + prev_m):(prev_m + 1),], nrow = 1)
+      }
+      else{
+        left_side <- left[,(1 + prev_m):(prev_m + res$multiplicities[i])]
+        right_side <- right[(1 + prev_m):(prev_m + res$multiplicities[i]),]
+      }
+      
+      components[[i]] <- Rssa::hankel(left_side %*% right_side)
+      
+      prev_m <- prev_m + res$multiplicities[i]
+    }
+    return(components)
+  }
+  
+  
+  
+  time_series_stamps1 = 1:100
+  time_series_stamps2 = 1:50
+```
+
+```{r}
+  eossa_exp_fixed <- function(ssa_obj, ecomp_num, roots, multiplicities, cl_eps = 3e-4){
+    w_length <- ssa_obj$window
+    U <- ssa_obj$U[,1:ecomp_num]
+    V <- ssa_obj$V[,1:ecomp_num]
+    vals <- diag(ssa_obj$sigma[1:ecomp_num])
+    if (is.null(V)){
+      svd_res <- svd(Rssa:::hankel(s$F))
+      U <- (svd_res$u)[,1:ecomp_num]
+      V <- (svd_res$v)[,1:ecomp_num]
+      vals <- diag((svd_res$d)[1:ecomp_num])
+    }
+    
+    P_low <- U[1:(w_length - 1),]
+    P_up <- U[2:w_length,]
+    M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
+    
+    basis <- get_all_basis(M, roots, multiplicities)
+    
+    if (nrow(basis$basis) > ncol(basis$basis)){
+      print("Wrong basis")
+      return(numeric(0))
+    }
+    
+    jordan_basis <- basis$basis
+    jordan_basis_inv <- qr.solve(jordan_basis)
+    components <- list()
+    
+    left <- U %*% jordan_basis
+    right <- numeric(0)
+    if (is.complex(V))
+      right <- jordan_basis_inv %*% vals %*% H(V)
+    else
+      right <- jordan_basis_inv %*% vals %*% t(V)
+    
+    prev_m <- 0
+    left_side <- numeric(0)
+    right_side <- numeric(0)
+    
+    for (i in 1:length(roots)){
+      
+      if (multiplicities[i] == 1){
+        left_side <- matrix(left[,(1 + prev_m):(prev_m + 1)], ncol = 1)
+        right_side <- matrix(right[(1 + prev_m):(prev_m + 1),], nrow = 1)
+      }
+      else{
+        left_side <- left[,(1 + prev_m):(prev_m + multiplicities[i])]
+        right_side <- right[(1 + prev_m):(prev_m + multiplicities[i]),]
+      }
+      
+      components[[i]] <- Rssa::hankel(left_side %*% right_side)
+      
+      prev_m <- prev_m + multiplicities[i]
+    }
+    return(components)
+  }
+```
+
+В связи с тем, что обобщенный EOSSA плохо работает для корней большой кратности, а также для кратных корней при добавленном шуме, попробуем посмотреть что происходит при аппроксимации полинома некоторой степени.
+
+## Пример 1.
+
+Возьмем полином степени 3.
+
+```{r}
+  polynomial <- function(j) {
+    return(4.7 - 3e-2 * j + 4.6e-4 * j ^ 2)
+  }
+```
+
+```{r}
+  time_series <- polynomial(time_series_stamps1)
+  s <- ssa(time_series, L = 50)
+  res <- eossa_exp(s, 3, 3e-2)
+```
+
+Ошибка аппроксимации
+
+```{r}
+  print(sum(abs(time_series - res[[1]])))
+```
+
+Достаточно точно аппроксимируется.
+
+## Пример 2.
+
+Возьмем полином степени 6.
+
+```{r}
+  polynomial <- function(j) {
+    return(4.7 - 3e-2 * j + 4.6e-4 * j ^ 2 - 5.3e-6 * j ^ 3 + 6e-8 * j ^ 4 - 4e-10 * j ^ 5 - 2e-12 * j ^ 6)
+  }
+```
+
+```{r}
+  time_series <- polynomial(time_series_stamps1)
+  s <- ssa(time_series, L = 50)
+  res <- eossa_exp(s, 7, 3e-2)
+```
+
+Ошибка аппроксимации
+
+```{r}
+  print(sum(abs(time_series - res[[1]])))
+```
+
+Достаточно точно аппроксимируется.
+
+## Пример 3.
+
+Возьмем полином степени 2. Добавим белый гауссовский шум $\mathcal{N}(0, 0.01 ^ 2)$
+
+```{r}
+  polynomial <- function(j) {
+    return(-3.2 + 3e-2 * j)
+  }
+```
+
+```{r}
+  source("jordan_util.R")
+  time_series <- polynomial(time_series_stamps1)
+  s <- ssa(time_series + rnorm(length(time_series), sd = 0.05), L = 50)
+  res <- eossa_exp(s, 2, 3e-2)
+```
+
+Здесь базис получался неполным, шум сильно изменяет кратный корень. Почему базис строился некорректно: первая степень матрицы при стандартном $tol$ (параметр для определения ранга) имела ранг 2. При этом если поставить $tol=6*10^{-3}$, то ранг определяется верно.
+
+Ошибка аппроксимации
+```{r}
+  sum(abs(res[[1]] - time_series))
+```
+
+Попробуем также посмотреть, что будет, если вручную ввести корень.
+
+```{r}
+  res2 <- eossa_exp_fixed(s, 2, c(1), c(2), 3e-2)
+```
+
+Ошибка аппроксимации
+```{r}
+  sum(abs(res2[[1]] - time_series))
+```
+
+Ошибки аппроксимации совпадают.
