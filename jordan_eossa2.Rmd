@@ -16,6 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Реализация EOSSA для случая кратных корней
 
 ```{r}
+  set.seed(15)
   print_roots <- function(ssa_obj, ecomp_num, cl_eps = 3e-4){
     w_length <- ssa_obj$window
     U <- ssa_obj$U[,1:ecomp_num]
@@ -66,6 +67,8 @@ knitr::opts_chunk$set(echo = TRUE)
     P_low <- U[1:(w_length - 1),]
     P_up <- U[2:w_length,]
     M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
+    print("M matrix")#
+    print(M)#
     
     dec <- eigen(M)
     #roots <- parestimate(ssa_obj, groups = list(1:ecomp_num), method = "esprit")$roots#
@@ -88,6 +91,7 @@ knitr::opts_chunk$set(echo = TRUE)
     }
     
     jordan_basis <- basis$basis
+    print(jordan_basis)#
     jordan_basis_inv <- qr.solve(jordan_basis)
     components <- list()
     
@@ -114,10 +118,10 @@ knitr::opts_chunk$set(echo = TRUE)
       }
       
       components[[i]] <- Rssa::hankel(left_side %*% right_side)
-      
+      hm <- left_side %*% right_side
       prev_m <- prev_m + res$multiplicities[i]
     }
-    return(components)
+    return(list("comps" = components, "matrix" = hm, "right_matrix" = right_side, "left_matrix" = left_side))
   }
   
   
@@ -133,7 +137,7 @@ knitr::opts_chunk$set(echo = TRUE)
     V <- ssa_obj$V[,1:ecomp_num]
     vals <- diag(ssa_obj$sigma[1:ecomp_num])
     if (is.null(V)){
-      svd_res <- svd(Rssa:::hankel(s$F))
+      svd_res <- svd(Rssa:::hankel(ssa_obj$F))
       U <- (svd_res$u)[,1:ecomp_num]
       V <- (svd_res$v)[,1:ecomp_num]
       vals <- diag((svd_res$d)[1:ecomp_num])
@@ -142,8 +146,12 @@ knitr::opts_chunk$set(echo = TRUE)
     P_low <- U[1:(w_length - 1),]
     P_up <- U[2:w_length,]
     M <- Rssa:::tls.solve(P_low, P_up) # Матрица сдвига
+    print("M matrix")#
+    print(M)#
     
     basis <- get_all_basis(M, roots, multiplicities)
+    
+    print(basis)#
     
     if (nrow(basis$basis) > ncol(basis$basis)){
       print("Wrong basis")
@@ -177,10 +185,11 @@ knitr::opts_chunk$set(echo = TRUE)
       }
       
       components[[i]] <- Rssa::hankel(left_side %*% right_side)
+      hm <- left_side %*% right_side
       
       prev_m <- prev_m + multiplicities[i]
     }
-    return(components)
+    return(list("comps" = components, "matrix" = hm, "left_matrix" = left_side, "right_matrix" = right_side))
   }
 ```
 
@@ -245,28 +254,38 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-  source("jordan_util.R")
+  set.seed(7)
   time_series <- polynomial(time_series_stamps1)
-  s <- ssa(time_series + rnorm(length(time_series), sd = 0.05), L = 50)
-  res <- eossa_exp(s, 2, 3e-2)
+  s <- ssa(time_series + rnorm(length(time_series), sd = 0.01), L = 50)
+  res <- eossa_exp(s, 2, 1)
 ```
 
 Здесь базис получался неполным, шум сильно изменяет кратный корень. Почему базис строился некорректно: первая степень матрицы при стандартном $tol$ (параметр для определения ранга) имела ранг 2. При этом если поставить $tol=6*10^{-3}$, то ранг определяется верно.
 
 Ошибка аппроксимации
 ```{r}
-  sum(abs(res[[1]] - time_series))
+  sum(abs(res$comps[[1]] - time_series))
 ```
 
 Попробуем также посмотреть, что будет, если вручную ввести корень.
 
 ```{r}
-  res2 <- eossa_exp_fixed(s, 2, c(1), c(2), 3e-2)
+  res2 <- eossa_exp_fixed(s, 2, c(1.02), c(2), 1)
 ```
 
 Ошибка аппроксимации
 ```{r}
-  sum(abs(res2[[1]] - time_series))
+  sum(abs(res2$comps[[1]] - time_series))
 ```
 
 Ошибки аппроксимации совпадают.
+
+```{r}
+  print(time_series)
+
+```
+
+```{r}
+  print(sum(abs(res$matrix - res2$matrix)))
+  res2$matrix
+```
