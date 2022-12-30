@@ -204,6 +204,7 @@ get_vecs <- function(B, res_basis, cell_sizes, ranks, k, m){
   B_prev <- correct_matrix(matrix_power(B, k - 1))
   rk_prev <- rankMatrix(B_prev, tol = 4e-2)
   
+  
   num_joined_curr <- numeric(0)
   if (length(res_basis) == 0){
     ranks <- c(rk_curr)
@@ -232,8 +233,12 @@ get_vecs <- function(B, res_basis, cell_sizes, ranks, k, m){
     else{
       vecs <- get_kernel_basis(B, nrow(B) - rk_curr)
       
-      if (length(res_basis) == 0)
-        return(list("basis" = vecs[,1:num_vecs], "cell_size" = rep(1, num_vecs), "ranks" = ranks))
+      if (length(res_basis) == 0){
+        if (num_vecs == 1)
+          return(list("basis" = matrix(vecs, ncol = 1), "cell_size" = rep(1, num_vecs), "ranks" = ranks)) 
+        else
+          return(list("basis" = vecs[,1:num_vecs], "cell_size" = rep(1, num_vecs), "ranks" = ranks)) 
+      }
       
       res_basis <- cbind(res_basis, get_lin_ind(vecs, res_basis, num_vecs))
       
