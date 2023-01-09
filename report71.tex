@@ -1,0 +1,148 @@
+\documentclass[specialist, substylefile = spbureport.rtx, subf,href,colorlinks=true, 12pt]{disser}
+
+\usepackage[a4paper,
+            mag=1000, includefoot,
+            left=3cm, right=1.5cm, top=2cm, bottom=2cm, headsep=1cm, footskip=1cm]{geometry}
+\usepackage{mathtext}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english,russian]{babel}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{bm}
+\usepackage{float}
+\usepackage{bbold}
+\usepackage{dsfont}
+\usepackage{graphicx}
+\usepackage{ textcomp }
+\usepackage{subcaption}
+\usepackage{mathdots}
+\usepackage{multirow}
+\usepackage{longtable,booktabs,array}
+\ifpdf\usepackage{epstopdf}\fi
+\bibliographystyle{gost2008}
+
+% Точка с запятой в качестве разделителя между номерами цитирований
+%\setcitestyle{semicolon}
+
+% Использовать полужирное начертание для векторов
+\let\vec=\mathbf
+
+% Включать подсекции в оглавление
+\setcounter{tocdepth}{2}
+
+\graphicspath{{fig/}}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Определение}
+\newtheorem{algorithm}{Алгоритм}
+\newtheorem{remark}{Замечание}
+\newtheorem{theorem}{Теорема}
+
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator{\diag}{diag}
+
+\begin{document}
+    Составим траекторную матрицу.
+    \begin{equation*}
+    \mathbf{S} = 
+        \begin{pmatrix}
+            c_1 & (c_1 + c_2)\mu & (c_1 + 2c_2)\mu^2 & \dots & (c_1 + (K - 1)c_2)\mu^{K - 1} \\
+            (c_1 + c_2)\mu & (c_1 + 2c_2)\mu^2 & (c_1 + 3c_2)\mu^3 & \dots & (c_1 + Kc_2)\mu^K \\
+            \vdots & \vdots & \vdots & \ddots & \dots \\
+            (c_1 + (L - 1)c_2)\mu^{L - 1} & (c_1 + Lc_2)\mu^L & (c_1 + (L + 1)c_2)\mu^{L + 1} & \dots & (c_1 + (N - 1)c_2)\mu^{N - 1}
+        \end{pmatrix}
+    \end{equation*}
+    Теперь нужно найти матрицу левых сингулярных векторов. Для этого составим ортонормальный базис пространства столбцов $\mathbf{S}$. Первым вектором возьмем \\ $f_1 := (1, \mu, \mu^2, \dots, \mu^{L - 1})^T$. Его необходимо нормировать. Посчитаем норму. 
+\begin{equation*}
+    c_1^2:=||(1, \mu, \mu^2, \dots, \mu^{L - 1})^T|| = \sum_{i = 0}^{L - 1}\mu^{2i}
+\end{equation*}
+В качестве второго вектора возьмем $e_2:=(0, \mu, 2\mu^2, 3\mu^3, \dots, (L - 1)\mu^{L - 1})^T$. Однако этот вектор не ортогонален первому. Построим ортогональный вектор $f_2$. Будем искать его как $f_2 := f_1 + \alpha e_2$. 
+\begin{equation*}
+    0 = (f_1, f_2) = (f_1, e_2) + \alpha (f_1, f_1) = (f_1, e_2) + \alpha c_1^2
+\end{equation*}
+\begin{equation*}
+    (f_1, e_2) = \sum_{i = 0}^{L - 1}i \mu^{2i} \Rightarrow \alpha = -\frac{1}{c_1^2}\sum_{i = 0}^{L - 1}i\mu^{2i}
+\end{equation*}
+\begin{equation*}
+    \Rightarrow f_2 = \begin{pmatrix}
+        \alpha \\
+        \mu (1 + \alpha) \\
+        \mu^2(2 + \alpha) \\
+        \mu^3(3 + \alpha) \\
+        \dots \\
+        \mu^{L - 1}(L - 1 + \alpha)
+    \end{pmatrix}
+\end{equation*}
+Этот вектор необходимо еще нормировать. Для этого посчитаем норму. 
+    \begin{equation*}
+        n_2^2 = (f_2, f_2) = c_2^2 + 2\alpha(f_1, e_2) + \alpha^2c_1^2
+    \end{equation*}
+    Тем самым мы нашли матрицу $\mathbf{U}$, она состоит из двух векторов. Теперь найдем сдвиговую матрицу $\mathbf{M}$.
+    \begin{equation*}
+        \begin{pmatrix}
+            \frac{1}{c_1} & \frac{\alpha}{n_2} \\
+            \frac{\mu}{c_1} & \frac{\mu}{n_2}(1+ \alpha) \\
+            \frac{\mu^2}{c_1} & \frac{\mu^2}{n_2}(2 + \alpha) \\
+            \dots & \dots \\
+            \frac{\mu^{L - 2}}{c_1} & \frac{\mu^{L - 2}}{n_2}(L - 2 + \alpha)
+        \end{pmatrix}
+        \begin{pmatrix}
+            m_{11} & m_{12} \\
+            m_{21} & m_{22}
+        \end{pmatrix}
+        =\begin{pmatrix}
+            \frac{\mu}{c_1} & \frac{\mu}{n_2}(1 + \alpha) \\
+            \frac{\mu^2}{c_1} & \frac{\mu ^ 2}{n_2}(2 + \alpha) \\
+            \frac{\mu^3}{c_1} & \frac{\mu^3}{n_2}(3 + \alpha) \\
+            \dots & \dots \\
+            \frac{\mu^{L - 1}}{c_1} & \frac{\mu^{L - 1}}{n_2}(L - 1 + \alpha)
+        \end{pmatrix}
+    \end{equation*}
+    Найдем сначала $m_{11}$ и $m_{21}$.
+    \begin{equation*}
+        \sum_{i = 0}^{L - 2}(\frac{\mu^i}{c_1}m_{11} + \frac{\mu^i(i + \alpha)}{n_2}m_{21} - \frac{\mu^{i + 1}}{c_1})^2 \longrightarrow extr
+    \end{equation*}
+    \begin{equation*}
+        2\sum_{i = 0}^{L - 2}(\frac{\mu^i}{c_1}m_{11} + \frac{\mu^i(i + \alpha)}{n_2}m_{21} - \frac{\mu^{i + 1}}{c_1}) = 0 
+    \end{equation*}
+    Пусть $m_{11} = \mu$. Тогда получаем
+    \begin{equation*}
+        2m_{21}\sum_{i = 0}^{L - 2}\frac{\mu^i(i + \alpha)}{n_2} = 0 \Rightarrow m_{21} = 0.
+    \end{equation*}
+    Теперь найдем $m_{12}$ и $m_{22}$.
+    \begin{equation*}
+        \sum_{i = 0}^{L - 2}(\frac{\mu^i}{c_1}m_{12} + \frac{\mu^i(i + \alpha)}{n_2}m_{22} - \frac{\mu^{i + 1}(i + 1 + \alpha)}{n_2})^2 \longrightarrow extr
+    \end{equation*}
+    Пусть $m_{22} = \mu$. Тогда
+    \begin{equation*}
+         2m_{12}\sum_{i = 0}^{L - 2}\frac{\mu^i}{c_1} = 0 \Rightarrow m_{12} = \frac{c_1 \mu}{n_2}
+    \end{equation*}
+    Таким образом, получили матрицу $\mathbf{M}$.
+    \begin{equation*}
+        \mathbf{M} = 
+        \begin{pmatrix}
+            \mu & \frac{c_1 \mu}{n_2} \\
+            0 & \mu
+        \end{pmatrix}
+    \end{equation*}
+    Жорданов базис:
+    \begin{equation*}
+        \begin{pmatrix}
+            \frac{c_1 \mu}{n_2} & 0 \\
+            0 & 1
+        \end{pmatrix}
+    \end{equation*}
+    В случае одной компоненты получаем разложение:
+    \begin{equation*}
+        (\mathbf{UT})(\mathbf{T}^{-1}\mathbf{\Sigma V}^T) = \mathbf{S}
+    \end{equation*}
+    Поэтому в случае одной компоненты, обобщенный EOSSA делает то же самое, что и обычный EOSSA. \\
+    Матрица, полученная из спектрального разложения:
+    \begin{equation*}
+        \begin{pmatrix}
+            -1 & 1 \\
+            0 & 0
+        \end{pmatrix}
+    \end{equation*}
+\end{document}
